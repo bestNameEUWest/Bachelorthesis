@@ -15,7 +15,9 @@ from sgan.data.loader import data_loader
 from sgan.losses import gan_g_loss, gan_d_loss, l2_loss
 from sgan.losses import displacement_error, final_displacement_error
 
-from sgan.models import TrajectoryGenerator, TrajectoryDiscriminator
+from sgan.models.TrajectoryGenerator import TrajectoryGenerator
+from sgan.models.TrajectoryDiscriminator import TrajectoryDiscriminator
+
 from sgan.utils import int_tuple, bool_flag, get_total_norm
 from sgan.utils import relative_to_abs, get_dset_path
 
@@ -28,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 # Dataset options
 parser.add_argument('--dataset_name', default='zara1', type=str)
-parser.add_argument('--delim', default=' ')
+parser.add_argument('--delim', default='\t')
 parser.add_argument('--loader_num_workers', default=4, type=int)
 parser.add_argument('--obs_len', default=8, type=int)
 parser.add_argument('--pred_len', default=8, type=int)
@@ -49,7 +51,7 @@ parser.add_argument('--mlp_dim', default=1024, type=int)
 # Generator Options
 parser.add_argument('--encoder_h_dim_g', default=64, type=int)
 parser.add_argument('--decoder_h_dim_g', default=128, type=int)
-parser.add_argument('--noise_dim', default=None, type=int_tuple)
+parser.add_argument('--noise_dim', default=[0], type=int_tuple)
 parser.add_argument('--noise_type', default='gaussian')
 parser.add_argument('--noise_mix_type', default='ped')
 parser.add_argument('--clipping_threshold_g', default=0, type=float)
@@ -84,7 +86,7 @@ parser.add_argument('--print_every', default=5, type=int)
 parser.add_argument('--checkpoint_every', default=100, type=int)
 parser.add_argument('--checkpoint_name', default='checkpoint')
 parser.add_argument('--checkpoint_start_from', default=None)
-parser.add_argument('--restore_from_checkpoint', default=1, type=int)
+parser.add_argument('--restore_from_checkpoint', default=0, type=int)
 parser.add_argument('--num_samples_check', default=5000, type=int)
 
 # Misc
@@ -125,7 +127,7 @@ def main(args):
         args.num_iterations = int(iterations_per_epoch * args.num_epochs)
 
     logger.info(
-        'There are {} iterations per epoch'.format(iterations_per_epoch)
+        f'There are {iterations_per_epoch} iterations per epoch'
     )
 
     generator = TrajectoryGenerator(
@@ -149,8 +151,8 @@ def main(args):
 
     generator.apply(init_weights)
     generator.type(float_dtype).train()
-    logger.info('Here is the generator:')
-    logger.info(generator)
+    # logger.info('Here is the generator:')
+    # logger.info(generator)
 
     discriminator = TrajectoryDiscriminator(
         obs_len=args.obs_len,
@@ -165,8 +167,8 @@ def main(args):
 
     discriminator.apply(init_weights)
     discriminator.type(float_dtype).train()
-    logger.info('Here is the discriminator:')
-    logger.info(discriminator)
+    # logger.info('Here is the discriminator:')
+    # logger.info(discriminator)
 
     g_loss_fn = gan_g_loss
     d_loss_fn = gan_d_loss
@@ -185,7 +187,7 @@ def main(args):
                                     '%s_with_model.pt' % args.checkpoint_name)
 
     if restore_path is not None and os.path.isfile(restore_path):
-        logger.info('Restoring from checkpoint {}'.format(restore_path))
+        logger.info(f'Restoring from checkpoint {restore_path}')
         checkpoint = torch.load(restore_path)
         generator.load_state_dict(checkpoint['g_state'])
         discriminator.load_state_dict(checkpoint['d_state'])
@@ -229,7 +231,7 @@ def main(args):
         d_steps_left = args.d_steps
         g_steps_left = args.g_steps
         epoch += 1
-        logger.info('Starting epoch {}'.format(epoch))
+        logger.info(f'Starting epoch {epoch}')
         for batch in train_loader:
             if args.timing == 1:
                 torch.cuda.synchronize()
@@ -259,7 +261,7 @@ def main(args):
             if args.timing == 1:
                 torch.cuda.synchronize()
                 t2 = time.time()
-                logger.info('{} step took {}'.format(step_type, t2 - t1))
+                logger.info(f'{step_type} step took {t2 - t1}')
 
             # Skip the rest if we are not at the end of an iteration
             if d_steps_left > 0 or g_steps_left > 0:
@@ -267,14 +269,12 @@ def main(args):
 
             if args.timing == 1:
                 if t0 is not None:
-                    logger.info('Interation {} took {}'.format(
-                        t - 1, time.time() - t0
-                    ))
+                    logger.info(f'Interation {t - 1} took {time.time() - t0}')
                 t0 = time.time()
 
             # Maybe save loss
             if t % args.print_every == 0:
-                logger.info('t = {} / {}'.format(t + 1, args.num_iterations))
+                logger.info(f't = {t + 1} / {args.num_iterations}')
                 for k, v in sorted(losses_d.items()):
                     logger.info('  [D] {}: {:.3f}'.format(k, v))
                     checkpoint['D_losses'][k].append(v)
@@ -329,17 +329,16 @@ def main(args):
                 checkpoint['d_state'] = discriminator.state_dict()
                 checkpoint['d_optim_state'] = optimizer_d.state_dict()
                 checkpoint_path = os.path.join(
-                    args.output_dir, '%s_with_model.pt' % args.checkpoint_name
-                )
-                logger.info('Saving checkpoint to {}'.format(checkpoint_path))
+                    args.output_dir, f'{args.checkpoint_name}s_with_model.pt')
+                logger.info(f'Saving checkpoint to {checkpoint_path}')
                 torch.save(checkpoint, checkpoint_path)
                 logger.info('Done.')
 
                 # Save a checkpoint with no model weights by making a shallow
                 # copy of the checkpoint excluding some items
                 checkpoint_path = os.path.join(
-                    args.output_dir, '%s_no_model.pt' % args.checkpoint_name)
-                logger.info('Saving checkpoint to {}'.format(checkpoint_path))
+                    args.output_dir, f'{args.checkpoint_name}s_no_model.pt')
+                logger.info(f'Saving checkpoint to {checkpoint_path}')
                 key_blacklist = [
                     'g_state', 'd_state', 'g_best_state', 'g_best_nl_state',
                     'g_optim_state', 'd_optim_state', 'd_best_state',
