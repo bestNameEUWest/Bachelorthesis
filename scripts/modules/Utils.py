@@ -74,9 +74,10 @@ def get_gpu_memory():
 
 def get_dset_path(dset_name, dset_type):
     _dir = os.path.dirname(__file__)
-    _dir = _dir.split("/")[:-1]
+    _dir = _dir.split("/")[:-2]
     _dir = "/".join(_dir)
-    return os.path.join(_dir, 'datasets', dset_name, dset_type)
+    _dir = os.path.join(_dir, 'datasets', dset_name, dset_type)
+    return _dir
 
 
 def relative_to_abs(rel_traj, start_pos):
