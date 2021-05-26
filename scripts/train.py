@@ -1,8 +1,7 @@
-import argparse
 import gc
 import logging
-import os
 import sys
+import os
 import time
 
 from collections import defaultdict
@@ -11,88 +10,24 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from sgan.data.loader import data_loader
+
+import scripts.modules.Argparser as ap
+import scripts.modules.DSUtils as dsu
+
 from sgan.losses import gan_g_loss, gan_d_loss, l2_loss
 from sgan.losses import displacement_error, final_displacement_error
 
 from sgan.models.TrajectoryGenerator import TrajectoryGenerator
 from sgan.models.TrajectoryDiscriminator import TrajectoryDiscriminator
 
-from sgan.utils import int_tuple, bool_flag, get_total_norm
-from sgan.utils import relative_to_abs, get_dset_path
+from scripts.modules.Utils import get_total_norm, relative_to_abs, get_dset_path
+from sgan.models.Utils import log
 
 torch.backends.cudnn.benchmark = True
 
-parser = argparse.ArgumentParser()
-FORMAT = '[%(levelname)s: %(filename)s: %(lineno)4d]: %(message)s'
+FORMAT = '[%(levelname)s: %(filename)-17s %(lineno)3d]: %(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMAT, stream=sys.stdout)
 logger = logging.getLogger(__name__)
-
-# Dataset options
-parser.add_argument('--dataset_name', default='zara1', type=str)
-parser.add_argument('--delim', default='\t')
-parser.add_argument('--loader_num_workers', default=4, type=int)
-parser.add_argument('--obs_len', default=8, type=int)
-parser.add_argument('--pred_len', default=8, type=int)
-parser.add_argument('--skip', default=1, type=int)
-
-# Optimization
-parser.add_argument('--batch_size', default=64, type=int)
-parser.add_argument('--num_iterations', default=10000, type=int)
-parser.add_argument('--num_epochs', default=200, type=int)
-
-# Model Options
-parser.add_argument('--embedding_dim', default=64, type=int)
-parser.add_argument('--num_layers', default=1, type=int)
-parser.add_argument('--dropout', default=0, type=float)
-parser.add_argument('--batch_norm', default=0, type=bool_flag)
-parser.add_argument('--mlp_dim', default=1024, type=int)
-
-# Generator Options
-parser.add_argument('--encoder_h_dim_g', default=64, type=int)
-parser.add_argument('--decoder_h_dim_g', default=128, type=int)
-parser.add_argument('--noise_dim', default=[0], type=int_tuple)
-parser.add_argument('--noise_type', default='gaussian')
-parser.add_argument('--noise_mix_type', default='ped')
-parser.add_argument('--clipping_threshold_g', default=0, type=float)
-parser.add_argument('--g_learning_rate', default=5e-4, type=float)
-parser.add_argument('--g_steps', default=1, type=int)
-
-# Pooling Options
-parser.add_argument('--pooling_type', default='pool_net')
-parser.add_argument('--pool_every_timestep', default=1, type=bool_flag)
-
-# Pool Net Option
-parser.add_argument('--bottleneck_dim', default=1024, type=int)
-
-# Social Pooling Options
-parser.add_argument('--neighborhood_size', default=2.0, type=float)
-parser.add_argument('--grid_size', default=8, type=int)
-
-# Discriminator Options
-parser.add_argument('--d_type', default='local', type=str)
-parser.add_argument('--encoder_h_dim_d', default=64, type=int)
-parser.add_argument('--d_learning_rate', default=5e-4, type=float)
-parser.add_argument('--d_steps', default=2, type=int)
-parser.add_argument('--clipping_threshold_d', default=0, type=float)
-
-# Loss Options
-parser.add_argument('--l2_loss_weight', default=0, type=float)
-parser.add_argument('--best_k', default=1, type=int)
-
-# Output
-parser.add_argument('--output_dir', default=os.getcwd())
-parser.add_argument('--print_every', default=5, type=int)
-parser.add_argument('--checkpoint_every', default=100, type=int)
-parser.add_argument('--checkpoint_name', default='checkpoint')
-parser.add_argument('--checkpoint_start_from', default=None)
-parser.add_argument('--restore_from_checkpoint', default=0, type=int)
-parser.add_argument('--num_samples_check', default=5000, type=int)
-
-# Misc
-parser.add_argument('--use_gpu', default=1, type=int)
-parser.add_argument('--timing', default=0, type=int)
-parser.add_argument('--gpu_num', default="0", type=str)
 
 
 def init_weights(m):
@@ -112,16 +47,16 @@ def get_dtypes(args):
 
 def main(args):
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_num
-    train_path = get_dset_path(args.dataset_name, 'train')
-    val_path = get_dset_path(args.dataset_name, 'val')
+    args.train_path = get_dset_path(args.dataset_name, 'train')
+    args.val_path = get_dset_path(args.dataset_name, 'val')
+    args.test_path = get_dset_path(args.dataset_name, 'test')
 
     long_dtype, float_dtype = get_dtypes(args)
 
     logger.info("Initializing train dataset")
-    train_dset, train_loader = data_loader(args, train_path)
-    logger.info("Initializing val dataset")
-    _, val_loader = data_loader(args, val_path)
-
+    [train_dset, val_dset, test_dset], [train_loader, val_loader, test_loader] = \
+    dsu.dataset_loader(args)
+    
     iterations_per_epoch = len(train_dset) / args.batch_size / args.d_steps
     if args.num_epochs:
         args.num_iterations = int(iterations_per_epoch * args.num_epochs)
@@ -151,8 +86,8 @@ def main(args):
 
     generator.apply(init_weights)
     generator.type(float_dtype).train()
-    # logger.info('Here is the generator:')
-    # logger.info(generator)
+    #logger.info('Here is the generator:')
+    #logger.info(generator)
 
     discriminator = TrajectoryDiscriminator(
         obs_len=args.obs_len,
@@ -167,8 +102,8 @@ def main(args):
 
     discriminator.apply(init_weights)
     discriminator.type(float_dtype).train()
-    # logger.info('Here is the discriminator:')
-    # logger.info(discriminator)
+    #logger.info('Here is the discriminator:')
+    #logger.info(discriminator)
 
     g_loss_fn = gan_g_loss
     d_loss_fn = gan_d_loss
@@ -240,6 +175,8 @@ def main(args):
             # Decide whether to use the batch for stepping on discriminator or
             # generator; an iteration consists of args.d_steps steps on the
             # discriminator followed by args.g_steps steps on the generator.
+            log('d_steps_left', d_steps_left)
+            log('g_steps_left', g_steps_left)
             if d_steps_left > 0:
                 step_type = 'd'
                 losses_d = discriminator_step(args, batch, generator,
@@ -575,5 +512,5 @@ def cal_fde(
 
 
 if __name__ == '__main__':
-    args = parser.parse_args()
+    args = ap.parse_args()
     main(args)

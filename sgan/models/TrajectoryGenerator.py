@@ -5,7 +5,7 @@ from sgan.models.Encoder import Encoder
 from sgan.models.Decoder import Decoder
 from sgan.models.Pooling import PoolHiddenNet, SocialPooling
 
-from sgan.models.Utils import make_mlp, get_noise
+from sgan.models.Utils import make_mlp, get_noise, log
 
 class TrajectoryGenerator(nn.Module):
     def __init__(
@@ -159,36 +159,79 @@ class TrajectoryGenerator(nn.Module):
         Output:
         - pred_traj_rel: Tensor of shape (self.pred_len, batch, 2)
         """
+
+        print('=================================================')
+        print('TrajGen fw:')
+
+
         batch = obs_traj_rel.size(1)
+        #log('obs_traj_rel', obs_traj_rel)
+        #log('obs_traj_rel type', type(obs_traj_rel))
+        #log('obs_traj_rel shape', obs_traj_rel.shape)
+        
+        
+        
         # Encode seq
         final_encoder_h = self.encoder(obs_traj_rel)
+        #log('final_encoder_h', final_encoder_h)
+        
         # Pool States
         if self.pooling_type:
             end_pos = obs_traj[-1, :, :]
+            print('if self.pooling_type == true:')
+            #log('end_pos:', end_pos)
+        
             pool_h = self.pool_net(final_encoder_h, seq_start_end, end_pos)
+            #log('pool_h:', pool_h)
+        
             # Construct input hidden states for decoder
             mlp_decoder_context_input = torch.cat(
                 [final_encoder_h.view(-1, self.encoder_h_dim), pool_h], dim=1)
+            #log('mlp_decoder_context_input:', mlp_decoder_context_input)
+        
         else:
             mlp_decoder_context_input = final_encoder_h.view(
                 -1, self.encoder_h_dim)
+            print('if self.pooling_type == false:')
+            #log('mlp_decoder_context_input:', mlp_decoder_context_input)
+        
+        
 
         # Add Noise
         if self.mlp_decoder_needed():
+            print('if self.mlp_decoder_needed() == true:')
             noise_input = self.mlp_decoder_context(mlp_decoder_context_input)
+            #log('obs_traj:', obs_traj)
+        
         else:
+            print('if self.mlp_decoder_needed() == false:')
+            
             noise_input = mlp_decoder_context_input
+            #log('noise_input:', noise_input)
+        
         decoder_h = self.add_noise(
             noise_input, seq_start_end, user_noise=user_noise)
+        #log('decoder_h:', decoder_h)
+        
         decoder_h = torch.unsqueeze(decoder_h, 0)
-
+        #log('decoder_h:', decoder_h)
+        
+        
         decoder_c = torch.zeros(
             self.num_layers, batch, self.decoder_h_dim
         ).cuda()
-
+        #log('decoder_c:', decoder_c)
+        
+        
         state_tuple = (decoder_h, decoder_c)
+        #log('state_tuple:', state_tuple)
+        
         last_pos = obs_traj[-1]
+        #log('last_pos:', last_pos)
+        
         last_pos_rel = obs_traj_rel[-1]
+        #log('last_pos_rel:', last_pos_rel)
+        
         # Predict Trajectory
 
         decoder_out = self.decoder(
@@ -197,6 +240,13 @@ class TrajectoryGenerator(nn.Module):
             state_tuple,
             seq_start_end,
         )
+        #log('decoder_out:', decoder_out)
+        
         pred_traj_fake_rel, final_decoder_h = decoder_out
-
+        #log('pred_traj_fake_rel:', pred_traj_fake_rel)
+        #log('final_decoder_h:', final_decoder_h)
+        
+        
+        print('=================================================')
+        
         return pred_traj_fake_rel

@@ -7,6 +7,8 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
+from sgan.models.Utils import log
+
 logger = logging.getLogger(__name__)
 
 
@@ -15,6 +17,12 @@ def seq_collate(data):
      non_linear_ped_list, loss_mask_list) = zip(*data)
 
     _len = [len(seq) for seq in obs_seq_list]
+
+    logger.info('obs_seq_list len')
+    logger.info(obs_seq_list)
+    logger.info('coll: _len')    
+    logger.info(_len)        
+    # exit()
     cum_start_idx = [0] + np.cumsum(_len).tolist()
     seq_start_end = [[start, end]
                      for start, end in zip(cum_start_idx, cum_start_idx[1:])]
@@ -60,7 +68,8 @@ def poly_fit(traj, traj_len, threshold):
     - int: 1 -> Non Linear 0-> Linear
     """
     t = np.linspace(0, traj_len - 1, traj_len)
-    res_x = np.polyfit(t, traj[0, -traj_len:], 2, full=True)[1]
+    tmp = np.polyfit(t, traj[0, -traj_len:], 2, full=True)
+    res_x = tmp[1]
     res_y = np.polyfit(t, traj[1, -traj_len:], 2, full=True)[1]
     if res_x + res_y >= threshold:
         return 1.0
@@ -102,62 +111,85 @@ class TrajectoryDataset(Dataset):
         seq_list_rel = []
         loss_mask_list = []
         non_linear_ped = []
+        
         for path in all_files:
-            data = read_file(path, delim)
+            data = read_file(path, delim)            
             frames = np.unique(data[:, 0]).tolist()
             frame_data = []
-            for frame in frames:
-                frame_data.append(data[frame == data[:, 0], :])
-            num_sequences = int(
-                math.ceil((len(frames) - self.seq_len + 1) / skip))
 
+            for frame in frames:
+                frame_data.append(data[frame == data[:, 0], :])        
+            num_sequences = int(
+                math.ceil((len(frames) - self.seq_len + 1) / skip))            
+            
             for idx in range(0, num_sequences * self.skip + 1, skip):
                 curr_seq_data = np.concatenate(
                     frame_data[idx:idx + self.seq_len], axis=0)
                 peds_in_curr_seq = np.unique(curr_seq_data[:, 1])
-                curr_seq_rel = np.zeros((len(peds_in_curr_seq), 2,
-                                         self.seq_len))
+
+                # -> walking sequence of poss416725ible pedestrians
+                curr_seq_rel = np.zeros((len(peds_in_curr_seq), 2,self.seq_len))
                 curr_seq = np.zeros((len(peds_in_curr_seq), 2, self.seq_len))
+                
+                # -> why?
                 curr_loss_mask = np.zeros((len(peds_in_curr_seq),
                                            self.seq_len))
                 num_peds_considered = 0
                 _non_linear_ped = []
-                for _, ped_id in enumerate(peds_in_curr_seq):
+                                
+                # log('',)
+                for _, ped_id in enumerate(peds_in_curr_seq):                    
                     curr_ped_seq = curr_seq_data[curr_seq_data[:, 1] ==
                                                  ped_id, :]
                     curr_ped_seq = np.around(curr_ped_seq, decimals=4)
-                    pad_front = frames.index(curr_ped_seq[0, 0]) - idx
+
+                    # -> check if ped is not in complete sequence i guess?                    
+                    # !  should be unneccesary code, because we only pick data
+                    #    where: len(curr_ped_seq) == self.seq_len 
+                    pad_front = frames.index(curr_ped_seq[0, 0]) - idx                    
                     pad_end = frames.index(curr_ped_seq[-1, 0]) - idx + 1
-                    if pad_end - pad_front != self.seq_len:
+
+                    # -> check if pedestrian is in each frame of sequence
+                    if pad_end - pad_front != self.seq_len:                        
                         continue
+
+                    # -> actual x-y values
                     curr_ped_seq = np.transpose(curr_ped_seq[:, 2:])
-                    curr_ped_seq = curr_ped_seq
+                    #log('curr_ped_seq',curr_ped_seq)
+
                     # Make coordinates relative
                     rel_curr_ped_seq = np.zeros(curr_ped_seq.shape)
+                    
                     rel_curr_ped_seq[:, 1:] = \
                         curr_ped_seq[:, 1:] - curr_ped_seq[:, :-1]
                     _idx = num_peds_considered
                     curr_seq[_idx, :, pad_front:pad_end] = curr_ped_seq
                     curr_seq_rel[_idx, :, pad_front:pad_end] = rel_curr_ped_seq
+                    
                     # Linear vs Non-Linear Trajectory
+                    # -> check which pedestrians are moving non-linear
                     _non_linear_ped.append(
                         poly_fit(curr_ped_seq, pred_len, threshold))
                     curr_loss_mask[_idx, pad_front:pad_end] = 1
                     num_peds_considered += 1
-
+                
                 if num_peds_considered > min_ped:
                     non_linear_ped += _non_linear_ped
                     num_peds_in_seq.append(num_peds_considered)
+                    # -> kindof represents the picked data as ones
                     loss_mask_list.append(curr_loss_mask[:num_peds_considered])
+                    # -> we only pick valid sequences
                     seq_list.append(curr_seq[:num_peds_considered])
                     seq_list_rel.append(curr_seq_rel[:num_peds_considered])
-
+                
         self.num_seq = len(seq_list)
+        # -> concatenate all sequences and loss mask lists
         seq_list = np.concatenate(seq_list, axis=0)
         seq_list_rel = np.concatenate(seq_list_rel, axis=0)
         loss_mask_list = np.concatenate(loss_mask_list, axis=0)
         non_linear_ped = np.asarray(non_linear_ped)
-
+                
+        
         # Convert numpy -> Torch Tensor
         self.obs_traj = torch.from_numpy(
             seq_list[:, :, :self.obs_len]).type(torch.float)
@@ -170,6 +202,7 @@ class TrajectoryDataset(Dataset):
         self.loss_mask = torch.from_numpy(loss_mask_list).type(torch.float)
         self.non_linear_ped = torch.from_numpy(non_linear_ped).type(torch.float)
         cum_start_idx = [0] + np.cumsum(num_peds_in_seq).tolist()
+        
         self.seq_start_end = [
             (start, end)
             for start, end in zip(cum_start_idx, cum_start_idx[1:])

@@ -23,3 +23,8 @@ def get_noise(shape, noise_type):
         return torch.rand(*shape).sub_(0.5).mul_(2.0).cuda()
     raise ValueError('Unrecognized noise type "%s"' % noise_type)
 
+
+def log(content, value=None, lb=True):
+    n = "\n" if lb else ''
+    value = value if value is not None else ''
+    print(f'{content}:{n}{value}\n')
