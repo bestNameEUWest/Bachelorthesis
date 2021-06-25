@@ -175,8 +175,8 @@ def main(args):
             # Decide whether to use the batch for stepping on discriminator or
             # generator; an iteration consists of args.d_steps steps on the
             # discriminator followed by args.g_steps steps on the generator.
-            log('d_steps_left', d_steps_left)
-            log('g_steps_left', g_steps_left)
+            #log('d_steps_left', d_steps_left)
+            #log('g_steps_left', g_steps_left)
             if d_steps_left > 0:
                 step_type = 'd'
                 losses_d = discriminator_step(args, batch, generator,
