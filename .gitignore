@@ -5,13 +5,13 @@
 
 ### files ###
 pytorch_data_save/*
-models/*
+
 datasets/*
 tmp.sh
 rename.py
 __pycache__/**
 logs/
-models/
+./models/
 pytorch_data_save/
 runs/
 scripts/__pycache__/*
