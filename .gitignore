@@ -6,7 +6,6 @@
 ### files ###
 pytorch_data_save/*
 
-datasets/*
 tmp.sh
 rename.py
 __pycache__/**
