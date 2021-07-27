@@ -5,6 +5,7 @@ from sgan.data.trajectories import TrajectoryDataset, seq_collate
 
 logger = logging.getLogger(__name__)
 
+
 def data_loader(args, path):
     dset = TrajectoryDataset(
         path,
