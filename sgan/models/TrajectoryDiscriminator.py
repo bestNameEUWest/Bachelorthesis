@@ -1,11 +1,12 @@
 import torch
 import torch.nn as nn
 
-from sgan.models.Encoder import Encoder
-from sgan.models.Decoder import Decoder
+from sgan.models.SGANEncoder import SGANEncoder
+from sgan.models.SGANDecoder import SGANDecoder
 from sgan.models.Pooling import PoolHiddenNet, SocialPooling
 
 from sgan.models.Utils import make_mlp
+
 
 class TrajectoryDiscriminator(nn.Module):
     def __init__(
@@ -22,7 +23,18 @@ class TrajectoryDiscriminator(nn.Module):
         self.h_dim = h_dim
         self.d_type = d_type
 
-        self.encoder = Encoder(
+        # self.custom_transformer = CustomTransformer(
+        #     enc_inp_size=feature_count,
+        #     dec_inp_size=3,
+        #     dec_out_size=3,
+        #     n=num_layers,
+        #     d_model=encoder_h_dim,
+        #     h=heads,
+        #     dropout=dropout
+        # )
+
+        self.encoder = SGANEncoder(
+            injected_encoder=None,
             embedding_dim=embedding_dim,
             h_dim=h_dim,
             mlp_dim=mlp_dim,
