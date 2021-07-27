@@ -13,9 +13,12 @@ import torch.optim as optim
 
 import scripts.modules.Argparser as ap
 import scripts.modules.DSUtils as dsu
+import sgan.models.transformer.custom_transformer
 
 from sgan.losses import gan_g_loss, gan_d_loss, l2_loss
 from sgan.losses import displacement_error, final_displacement_error
+
+from sgan.data.loader import data_loader
 
 from sgan.models.TrajectoryGenerator import TrajectoryGenerator
 from sgan.models.TrajectoryDiscriminator import TrajectoryDiscriminator
@@ -32,7 +35,11 @@ logger = logging.getLogger(__name__)
 
 def init_weights(m):
     classname = m.__class__.__name__
-    if classname.find('Linear') != -1:
+
+    #print(f"Linear find: {classname.find('Linear')}")
+    #print(f"LinearEmbedding find: {classname.find('LinearEmbedding')}")
+    #print(f"Classname: {classname}")
+    if (classname.find('Linear') != -1) and classname.find('LinearEmbedding') == -1:
         nn.init.kaiming_normal_(m.weight)
 
 
@@ -56,7 +63,11 @@ def main(args):
     logger.info("Initializing train dataset")
     [train_dset, val_dset, test_dset], [train_loader, val_loader, test_loader] = \
     dsu.dataset_loader(args)
-    
+
+    #train_dset, train_loader = data_loader(args, args.train_path)
+    #_, val_loader = data_loader(args, args.val_path)
+
+
     iterations_per_epoch = len(train_dset) / args.batch_size / args.d_steps
     if args.num_epochs:
         args.num_iterations = int(iterations_per_epoch * args.num_epochs)
@@ -295,9 +306,7 @@ def main(args):
                 break
 
 
-def discriminator_step(
-    args, batch, generator, discriminator, d_loss_fn, optimizer_d
-):
+def discriminator_step(args, batch, generator, discriminator, d_loss_fn, optimizer_d):
     batch = [tensor.cuda() for tensor in batch]
     (obs_traj, pred_traj_gt, obs_traj_rel, pred_traj_gt_rel, non_linear_ped,
      loss_mask, seq_start_end) = batch
@@ -333,9 +342,7 @@ def discriminator_step(
     return losses
 
 
-def generator_step(
-    args, batch, generator, discriminator, g_loss_fn, optimizer_g
-):
+def generator_step(args, batch, generator, discriminator, g_loss_fn, optimizer_g):
     batch = [tensor.cuda() for tensor in batch]
     (obs_traj, pred_traj_gt, obs_traj_rel, pred_traj_gt_rel, non_linear_ped,
      loss_mask, seq_start_end) = batch
