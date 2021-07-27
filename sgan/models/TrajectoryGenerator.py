@@ -11,7 +11,7 @@ from sgan.models.Utils import make_mlp, get_noise, log
 
 class TrajectoryGenerator(nn.Module):
     def __init__(
-            self, obs_len, pred_len, encoder_type, feature_count=2, embedding_dim=64, encoder_h_dim=64,
+            self, obs_len, pred_len, feature_count=2, embedding_dim=64, encoder_h_dim=64,
             decoder_h_dim=128, mlp_dim=1024, num_layers=1, noise_dim=(0,),
             noise_type='gaussian', noise_mix_type='ped', pooling_type=None,
             pool_every_timestep=True, dropout=0.0, heads=8, bottleneck_dim=1024,
