@@ -4,7 +4,8 @@ import torch.nn as nn
 from sgan.models.Pooling import PoolHiddenNet, SocialPooling
 from sgan.models.Utils import make_mlp
 
-class Decoder(nn.Module):
+
+class SGANDecoder(nn.Module):
     """Decoder is part of TrajectoryGenerator"""
     def __init__(
         self, seq_len, embedding_dim=64, h_dim=128, mlp_dim=1024, num_layers=1,
@@ -12,7 +13,7 @@ class Decoder(nn.Module):
         activation='relu', batch_norm=True, pooling_type='pool_net',
         neighborhood_size=2.0, grid_size=8
     ):
-        super(Decoder, self).__init__()
+        super(SGANDecoder, self).__init__()
 
         self.seq_len = seq_len
         self.mlp_dim = mlp_dim
