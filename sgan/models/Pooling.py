@@ -1,10 +1,126 @@
 import torch
 import torch.nn as nn
 
-from sgan.models.Utils import make_mlp
+from sgan.models.Utils import make_mlp, log
+
 
 class PoolHiddenNet(nn.Module):
     """Pooling module as proposed in our paper"""
+    def forward(self, h_states, seq_start_end, end_pos):
+        """
+        Inputs:
+        - h_states: Tensor of shape (num_layers, batch, h_dim)
+        - seq_start_end: A list of tuples which delimit sequences within batch
+        - end_pos: Tensor of shape (batch, 2)
+        Output:
+        - pool_h: Tensor of shape (batch, bottleneck_dim)
+        """
+        torch.set_printoptions(sci_mode=False)
+        # log('h_states shape', h_states.shape)
+        # log('h_states is_contiguous()', h_states.is_contiguous())
+
+        end_pos_tmp = end_pos.clone()
+        # log('end_pos_tmp.shape', end_pos_tmp.shape)
+
+        end_pos = end_pos[-1, :, :]
+        # log('end_pos.shape', end_pos.shape)
+        h_states_tmp = h_states.clone()
+        pool_h = []
+        pool_h_tmp = []
+        for _, (start, end) in enumerate(seq_start_end):
+            start = start.item()
+            end = end.item()
+            num_ped = end - start
+            # INFO: their data is ( LSTM layer count X batch count X hidden state )
+            # INFO: we need to adjust here because our state is ( encoded sequence count X batch count X hidden state )
+            # TODO: adjust so it works with dim=0
+            curr_hidden = h_states.contiguous().view(-1, self.h_dim)[start:end]
+            curr_hidden_tmp = h_states_tmp.contiguous()[:, start:end]
+            # log('curr_hidden shape', curr_hidden.shape)
+            # log('curr_hidden_tmp shape', curr_hidden_tmp.shape)
+
+            curr_end_pos = end_pos[start:end]
+            curr_end_pos_tmp = end_pos_tmp[:, start:end]
+
+            # Repeat -> H1, H2, H1, H2
+            curr_hidden_1 = curr_hidden.repeat(num_ped, 1)
+            # log('current_hidden_1 shape', curr_hidden_1.shape)
+
+            curr_hidden_1_tmp = curr_hidden_tmp.repeat(1, num_ped, 1)
+            # log('current_hidden_1_tmp shape', curr_hidden_1_tmp.shape)
+
+            # Repeat position -> P1, P2, P1, P2
+            curr_end_pos_1 = curr_end_pos.repeat(num_ped, 1)
+            # log('curr_end_pos_1 shape', curr_end_pos_1.shape)
+
+            curr_end_pos_1_tmp = curr_end_pos_tmp.repeat(1, num_ped, 1)
+            # log('curr_end_pos_1_tmp shape', curr_end_pos_1_tmp.shape)
+
+            # Repeat position -> P1, P1, P2, P2
+            # log('current_end_pos shape', curr_end_pos.shape)
+            curr_end_pos_2 = self.repeat(curr_end_pos, num_ped)
+            # log('curr_end_pos_2 shape', curr_end_pos_2.shape)
+            # log('curr_end_pos_2', curr_end_pos_2)
+
+            # log('curr_end_pos_tmp shape', curr_end_pos_tmp.shape)
+            curr_end_pos_2_tmp = self.repeat(curr_end_pos_tmp, num_ped)
+            # log('curr_end_pos_2_tmp shape', curr_end_pos_2_tmp.shape)
+            # log('curr_end_pos_2_tmp', curr_end_pos_2_tmp)
+
+            curr_rel_pos = curr_end_pos_1 - curr_end_pos_2
+            curr_rel_pos_tmp = curr_end_pos_1_tmp - curr_end_pos_2_tmp
+
+            # log('curr_rel_pos', curr_rel_pos)
+            # log('curr_rel_pos_tmp', curr_rel_pos_tmp)
+
+            curr_rel_embedding = self.spatial_embedding(curr_rel_pos)
+            curr_rel_embedding_tmp = self.spatial_embedding(curr_rel_pos_tmp)
+            # log('curr_rel_embedding shape', curr_rel_embedding.shape)
+            # log('curr_rel_embedding_tmp shape', curr_rel_embedding_tmp.shape)
+
+            # INFO: Create Tensor with ( [H1, H2, H1, H2,] X [
+            # INFO:     "0"         X   H1
+            # INFO:     P1 - P2     X   H2
+            # INFO:     P2 - P1     X   H1
+            # INFO:     "0"         X   H2
+            mlp_h_input = torch.cat([curr_rel_embedding, curr_hidden_1], dim=1)
+            # log('mlp_h_input shape', mlp_h_input.shape)
+            curr_pool_h = self.mlp_pre_pool(mlp_h_input)
+            # log('curr_pool_h pre shape', curr_pool_h.shape)
+            tmp_0 = curr_pool_h.view(num_ped, num_ped, -1)
+            curr_pool_h = tmp_0.max(1)[0]
+            # log('tmp_0 shape', tmp_0.shape)
+            # log('tmp_0 ', tmp_0)
+            # log('curr_pool_h post shape', curr_pool_h.shape)
+            # log('curr_pool_h post ', curr_pool_h)
+
+            # from this point we need to temporarily check if we have the hidden state of the TF
+            # TODO: cleanup: remove if/else
+            if h_states.size(0) == 7:
+                mlp_h_input_tmp = torch.cat([curr_rel_embedding_tmp, curr_hidden_1_tmp], dim=2)
+                # log('mlp_h_input_tmp shape', mlp_h_input_tmp.shape)
+                curr_pool_h_tmp = self.mlp_pre_pool(mlp_h_input_tmp)
+                # log('curr_pool_h_tmp pre shape', curr_pool_h_tmp.shape)
+                tmp_1 = curr_pool_h_tmp.view(h_states.size(0), num_ped, num_ped, -1)
+                curr_pool_h_tmp = tmp_1.max(2)[0]
+                # log('tmp_1 shape', tmp_1.shape)
+                # log('tmp_1 ', tmp_1)
+                # log('curr_pool_h_tmp post shape', curr_pool_h_tmp.shape)
+                # log('curr_pool_h_tmp post ', curr_pool_h_tmp)
+                pool_h_tmp.append(curr_pool_h_tmp)
+            pool_h.append(curr_pool_h)
+
+        pool_h = torch.cat(pool_h, dim=0)
+        # log('pool_h shape', pool_h.shape)
+
+        # TODO: cleanup: remove if/else
+        if h_states.size(0) == 7:
+            pool_h_tmp = torch.cat(pool_h_tmp, dim=1)
+            # log('pool_h_tmp shape', pool_h_tmp.shape)
+            return pool_h_tmp
+
+        return pool_h
+
     def __init__(
         self, embedding_dim=64, h_dim=64, mlp_dim=1024, bottleneck_dim=1024,
         activation='relu', batch_norm=True, dropout=0.0
@@ -34,41 +150,24 @@ class PoolHiddenNet(nn.Module):
         Outpus:
         -repeat_tensor: Repeat each row such that: R1, R1, R2, R2
         """
-        col_len = tensor.size(1)
-        tensor = tensor.unsqueeze(dim=1).repeat(1, num_reps, 1)
-        tensor = tensor.view(-1, col_len)
-        return tensor
+        col_pos = len(tensor.size()) - 1
+        col_len = tensor.size(col_pos)
+        pred_len = tensor.size(0)
+        # log('col_pos', col_pos)
+        # log('col_len', col_len)
+        tensor_t = tensor.unsqueeze(dim=col_pos)
+        # log('tensor_t shape', tensor_t.shape)
+        if col_pos == 1:
+            tensor = tensor_t.repeat(1, num_reps, 1)
+            # log('tensor shape', tensor.shape)
+            tensor = tensor.view(-1, col_len)
+        elif col_pos == 2:
+            tensor = tensor_t.repeat(1, 1, num_reps, 1)
+            # log('tensor shape', tensor.shape)
+            tensor = tensor.view(pred_len, -1, col_len)
 
-    def forward(self, h_states, seq_start_end, end_pos):
-        """
-        Inputs:
-        - h_states: Tensor of shape (num_layers, batch, h_dim)
-        - seq_start_end: A list of tuples which delimit sequences within batch
-        - end_pos: Tensor of shape (batch, 2)
-        Output:
-        - pool_h: Tensor of shape (batch, bottleneck_dim)
-        """
-        pool_h = []
-        for _, (start, end) in enumerate(seq_start_end):
-            start = start.item()
-            end = end.item()
-            num_ped = end - start
-            curr_hidden = h_states.contiguous().view(-1, self.h_dim)[start:end]
-            curr_end_pos = end_pos[start:end]
-            # Repeat -> H1, H2, H1, H2
-            curr_hidden_1 = curr_hidden.repeat(num_ped, 1)
-            # Repeat position -> P1, P2, P1, P2
-            curr_end_pos_1 = curr_end_pos.repeat(num_ped, 1)
-            # Repeat position -> P1, P1, P2, P2
-            curr_end_pos_2 = self.repeat(curr_end_pos, num_ped)
-            curr_rel_pos = curr_end_pos_1 - curr_end_pos_2
-            curr_rel_embedding = self.spatial_embedding(curr_rel_pos)
-            mlp_h_input = torch.cat([curr_rel_embedding, curr_hidden_1], dim=1)
-            curr_pool_h = self.mlp_pre_pool(mlp_h_input)
-            curr_pool_h = curr_pool_h.view(num_ped, num_ped, -1).max(1)[0]
-            pool_h.append(curr_pool_h)
-        pool_h = torch.cat(pool_h, dim=0)
-        return pool_h
+        # log('tensor view shape', tensor.shape)
+        return tensor
 
 
 class SocialPooling(nn.Module):
