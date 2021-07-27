@@ -2,13 +2,13 @@ import torch
 import torch.nn as nn
 
 from sgan.models.Pooling import PoolHiddenNet, SocialPooling
-from sgan.models.Utils import make_mlp
+from sgan.models.Utils import make_mlp, log
 
 
 class SGANDecoder(nn.Module):
     """Decoder is part of TrajectoryGenerator"""
     def __init__(
-        self, seq_len, embedding_dim=64, h_dim=128, mlp_dim=1024, num_layers=1,
+        self, seq_len, injected_decoder=None, embedding_dim=64, h_dim=128, mlp_dim=1024, num_layers=1,
         pool_every_timestep=True, dropout=0.0, bottleneck_dim=1024,
         activation='relu', batch_norm=True, pooling_type='pool_net',
         neighborhood_size=2.0, grid_size=8
@@ -21,9 +21,11 @@ class SGANDecoder(nn.Module):
         self.embedding_dim = embedding_dim
         self.pool_every_timestep = pool_every_timestep
 
-        self.decoder = nn.LSTM(
+        self.LSTMdecoder = nn.LSTM(
             embedding_dim, h_dim, num_layers, dropout=dropout
         )
+
+        self.decoder = injected_decoder
 
         if pool_every_timestep:
             if pooling_type == 'pool_net':
@@ -67,13 +69,19 @@ class SGANDecoder(nn.Module):
         Output:
         - pred_traj: tensor of shape (self.seq_len, batch, 2)
         """
+        # for TF encoder
+
+
+        # for lstm encoder
         batch = last_pos.size(0)
+        log('last_pos shape', last_pos.shape)
         pred_traj_fake_rel = []
-        decoder_input = self.spatial_embedding(last_pos_rel)
-        decoder_input = decoder_input.view(1, batch, self.embedding_dim)
+
+        decoder_input_lstm = self.spatial_embedding(last_pos_rel)
+        decoder_input_lstm = decoder_input_lstm.view(1, batch, self.embedding_dim)
 
         for _ in range(self.seq_len):
-            output, state_tuple = self.decoder(decoder_input, state_tuple)
+            output, state_tuple = self.LSTMdecoder(decoder_input_lstm, state_tuple)
             rel_pos = self.hidden2pos(output.view(-1, self.h_dim))
             curr_pos = rel_pos + last_pos
 
