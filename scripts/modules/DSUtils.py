@@ -42,12 +42,9 @@ def dataset_loader(args):
     # data preparation check
     if args.dataset_name == 'rounD':
         datasets_formatted_check(args)
-      
-    
-    labels = ['train', 'val', 'test']
 
     save_dir_name = datetime.now().strftime("%d-%m-%Y_%Ss-%Mm-%Hh")
-    available, path = is_data_prepared(pytorch_data_save_dir, dataset_info)  
+    available, path = is_data_prepared(pytorch_data_save_dir, dataset_info)
 
     labels = ['train', 'val', 'test']
     paths = [args.train_path, args.val_path, args.test_path]
