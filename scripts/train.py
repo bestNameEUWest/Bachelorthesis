@@ -25,6 +25,7 @@ from sgan.models.TrajectoryDiscriminator import TrajectoryDiscriminator
 
 from scripts.modules.Utils import get_total_norm, relative_to_abs, get_dset_path
 from sgan.models.Utils import log
+from sgan.models.transformer.batch import subsequent_mask
 
 torch.backends.cudnn.benchmark = True
 
@@ -313,7 +314,15 @@ def discriminator_step(args, batch, generator, discriminator, d_loss_fn, optimiz
     losses = {}
     loss = torch.zeros(1).to(pred_traj_gt)
 
-    generator_out = generator(obs_traj, obs_traj_rel, seq_start_end)
+    # TODO: expand for feature_count later
+    target = pred_traj_gt_rel.permute(1, 0, 2)[:, :-1, :]
+    target_c = torch.zeros((target.shape[0], target.shape[1], 1)).cuda()
+    target = torch.cat((target, target_c), -1)
+    start_of_seq = torch.Tensor([0, 0, 1]).unsqueeze(0).unsqueeze(1).repeat(target.shape[0], 1, 1).cuda()
+    dec_inp = torch.cat((start_of_seq, target), 1)
+    trg_att = subsequent_mask(dec_inp.shape[1]).repeat(dec_inp.shape[0], 1, 1).cuda()
+
+    generator_out = generator(obs_traj, obs_traj_rel, seq_start_end, dec_inp, trg_att)
 
     pred_traj_fake_rel = generator_out
     pred_traj_fake = relative_to_abs(pred_traj_fake_rel, obs_traj[-1])
@@ -353,7 +362,16 @@ def generator_step(args, batch, generator, discriminator, g_loss_fn, optimizer_g
     loss_mask = loss_mask[:, args.obs_len:]
 
     for _ in range(args.best_k):
-        generator_out = generator(obs_traj, obs_traj_rel, seq_start_end)
+        # TODO: expand for feature_count later
+        target = pred_traj_gt_rel.permute(1, 0, 2)[:, :-1, :]
+        target_c = torch.zeros((target.shape[0], target.shape[1], 1)).cuda()
+        target = torch.cat((target, target_c), -1)
+        start_of_seq = torch.Tensor([0, 0, 1]).unsqueeze(0).unsqueeze(1).repeat(target.shape[0], 1, 1).cuda()
+        dec_inp = torch.cat((start_of_seq, target), 1)
+        trg_att = subsequent_mask(dec_inp.shape[1]).repeat(dec_inp.shape[0], 1, 1).cuda()
+
+        generator_out = generator(obs_traj, obs_traj_rel, seq_start_end, dec_inp, trg_att)
+        # generator_out = generator(obs_traj, obs_traj_rel, seq_start_end)
 
         pred_traj_fake_rel = generator_out
         pred_traj_fake = relative_to_abs(pred_traj_fake_rel, obs_traj[-1])
