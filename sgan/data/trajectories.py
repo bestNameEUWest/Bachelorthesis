@@ -155,7 +155,6 @@ class TrajectoryDataset(Dataset):
 
                     # -> actual x-y values
                     curr_ped_seq = np.transpose(curr_ped_seq[:, 2:])
-                    #log('curr_ped_seq',curr_ped_seq)
 
                     # Make coordinates relative
                     rel_curr_ped_seq = np.zeros(curr_ped_seq.shape)

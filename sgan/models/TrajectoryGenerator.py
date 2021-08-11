@@ -47,7 +47,7 @@ class TrajectoryGenerator(nn.Module):
             h=heads,
             dropout=dropout
         )
-
+        # log('Trajectory g sgan enc encoder_h_dim size', encoder_h_dim)
         self.encoder = SGANEncoder(
             injected_encoder=self.custom_transformer.encoder,
             embedding_dim=embedding_dim,
@@ -56,7 +56,7 @@ class TrajectoryGenerator(nn.Module):
             num_layers=num_layers,
             dropout=dropout
         )
-
+        # log('Trajectory g sgan dec decoder_h_dim size', decoder_h_dim)
         self.decoder = SGANDecoder(
             pred_len,
             injected_decoder=self.custom_transformer.decoder,
@@ -163,7 +163,7 @@ class TrajectoryGenerator(nn.Module):
         else:
             return False
 
-    def forward(self, obs_traj, obs_traj_rel, seq_start_end, user_noise=None):
+    def forward(self, obs_traj, obs_traj_rel, seq_start_end, dec_inp, trg_att, user_noise=None):
         """
         Inputs:
         - obs_traj: Tensor of shape (obs_len, batch, 2)
@@ -175,85 +175,39 @@ class TrajectoryGenerator(nn.Module):
         - pred_traj_rel: Tensor of shape (self.pred_len, batch, 2)
         """
 
-        print('=================================================')
-        print('TrajGen fw:')
-
-        batch = obs_traj_rel.size(1)
-        # log('obs_traj_rel shape', obs_traj_rel.shape)
-
-        # Encode seq
-        final_encoder_h, final_encoder_h_lstm = self.encoder(obs_traj_rel)
+        final_encoder_h, src_att = self.encoder(obs_traj_rel)
         final_encoder_h = final_encoder_h.permute(1, 0, 2)
-        log('final_encoder_h shape', final_encoder_h.shape)
-        log('final_encoder_h_lstm shape', final_encoder_h_lstm.shape)
 
         # Pool States
         if self.pooling_type:
             end_pos = obs_traj[1:, :, :]
-
-            pool_h_lstm = self.pool_net(final_encoder_h_lstm, seq_start_end, end_pos)
             pool_h = self.pool_net(final_encoder_h, seq_start_end, end_pos)
-
-            log('pool_h_lstm shape:', pool_h_lstm.shape)
-            log('pool_h shape:', pool_h.shape)
-
             # Construct input hidden states for decoder
-            mlp_decoder_context_input_lstm = torch.cat(
-                [final_encoder_h_lstm.view(-1, self.encoder_h_dim), pool_h_lstm], dim=1)
-            # log('...lstm is contiguous', final_encoder_h_lstm.is_contiguous())
-            # log('...tf is contiguous', final_encoder_h.is_contiguous())
-            log('mlp_decoder_context_input_lstm shape', mlp_decoder_context_input_lstm.shape)
-            # log('mlp_decoder_context_input_lstm', mlp_decoder_context_input_lstm)
             mlp_decoder_context_input = torch.cat([final_encoder_h, pool_h], dim=2)
-            log('mlp_decoder_context_input shape', mlp_decoder_context_input.shape)
-
         else:
             mlp_decoder_context_input = final_encoder_h
 
         # Add Noise
         if self.mlp_decoder_needed():
-            noise_input_lstm = self.mlp_decoder_context(mlp_decoder_context_input_lstm)
             noise_input = self.mlp_decoder_context(mlp_decoder_context_input)
-            # log('obs_traj:', obs_traj)
-
         else:
             noise_input = mlp_decoder_context_input
-            noise_input_lstm = mlp_decoder_context_input_lstm
-            # log('noise_input:', noise_input)
-
-        decoder_h_lstm = self.add_noise(noise_input_lstm, seq_start_end, user_noise=user_noise)
-        decoder_h_lstm = torch.unsqueeze(decoder_h_lstm, 0)
-        log('decoder_h_lstm shape', decoder_h_lstm.shape)
-        decoder_c_lstm = torch.zeros(self.num_layers, batch, self.decoder_h_dim).cuda()
 
         decoder_h = self.add_noise(noise_input, seq_start_end, user_noise=user_noise)
-        log('decoder_h shape', decoder_h.shape)
 
-        state_tuple = (decoder_h_lstm, decoder_c_lstm)
         last_pos = obs_traj[-1]
         last_pos_rel = obs_traj_rel[-1]
 
         # Predict Trajectory
 
-        decoder_out_lstm = self.decoder(
-            last_pos,
-            last_pos_rel,
-            state_tuple,
-            seq_start_end,
-        )
-
         state_tuple = (decoder_h, None)
-        decoder_out = self.decoder(
+        pred_traj_fake_rel = self.decoder(
             last_pos,
             last_pos_rel,
             state_tuple,
             seq_start_end,
+            src_att,
+            dec_inp,
+            trg_att,
         )
-        # log('decoder_out:', decoder_out)
-
-        pred_traj_fake_rel, final_decoder_h = decoder_out_lstm
-
-        print('=================================================')
-
-        exit()
         return pred_traj_fake_rel

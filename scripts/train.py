@@ -98,9 +98,11 @@ def main(args):
 
     generator.apply(init_weights)
     generator.type(float_dtype).train()
-    #logger.info('Here is the generator:')
-    #logger.info(generator)
+    torch.autograd.set_detect_anomaly(True)
+    # logger.info('Here is the generator:')
+    # logger.info(generator)
 
+    # log('args.encoder_h_dim_d', args.encoder_h_dim_d)
     discriminator = TrajectoryDiscriminator(
         obs_len=args.obs_len,
         pred_len=args.pred_len,
@@ -114,8 +116,8 @@ def main(args):
 
     discriminator.apply(init_weights)
     discriminator.type(float_dtype).train()
-    #logger.info('Here is the discriminator:')
-    #logger.info(discriminator)
+    # logger.info('Here is the discriminator:')
+    # logger.info(discriminator)
 
     g_loss_fn = gan_g_loss
     d_loss_fn = gan_d_loss
@@ -187,8 +189,6 @@ def main(args):
             # Decide whether to use the batch for stepping on discriminator or
             # generator; an iteration consists of args.d_steps steps on the
             # discriminator followed by args.g_steps steps on the generator.
-            #log('d_steps_left', d_steps_left)
-            #log('g_steps_left', g_steps_left)
             if d_steps_left > 0:
                 step_type = 'd'
                 losses_d = discriminator_step(args, batch, generator,

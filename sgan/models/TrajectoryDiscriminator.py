@@ -4,13 +4,14 @@ import torch.nn as nn
 from sgan.models.SGANEncoder import SGANEncoder
 from sgan.models.SGANDecoder import SGANDecoder
 from sgan.models.Pooling import PoolHiddenNet, SocialPooling
+from sgan.models.transformer.custom_transformer import CustomTransformer
 
-from sgan.models.Utils import make_mlp
+from sgan.models.Utils import make_mlp, log
 
 
 class TrajectoryDiscriminator(nn.Module):
     def __init__(
-        self, obs_len, pred_len, embedding_dim=64, h_dim=64, mlp_dim=1024,
+        self, obs_len, pred_len, feature_count=2, heads=8, embedding_dim=64, h_dim=64, mlp_dim=1024,
         num_layers=1, activation='relu', batch_norm=True, dropout=0.0,
         d_type='local'
     ):
@@ -23,18 +24,19 @@ class TrajectoryDiscriminator(nn.Module):
         self.h_dim = h_dim
         self.d_type = d_type
 
-        # self.custom_transformer = CustomTransformer(
-        #     enc_inp_size=feature_count,
-        #     dec_inp_size=3,
-        #     dec_out_size=3,
-        #     n=num_layers,
-        #     d_model=encoder_h_dim,
-        #     h=heads,
-        #     dropout=dropout
-        # )
-
+        # log('Trajectory d tf d_model size', h_dim)
+        self.custom_transformer = CustomTransformer(
+            enc_inp_size=feature_count,
+            dec_inp_size=3,
+            dec_out_size=3,
+            n=num_layers,
+            d_model=h_dim,
+            h=heads,
+            dropout=dropout
+        )
+        # log('Trajectory d sgan enc h_dim size', h_dim)
         self.encoder = SGANEncoder(
-            injected_encoder=None,
+            injected_encoder=self.custom_transformer.encoder,
             embedding_dim=embedding_dim,
             h_dim=h_dim,
             mlp_dim=mlp_dim,
@@ -69,16 +71,20 @@ class TrajectoryDiscriminator(nn.Module):
         Output:
         - scores: Tensor of shape (batch,) with real/fake scores
         """
-        final_h = self.encoder(traj_rel)
+
+        final_h, src_att = self.encoder(traj_rel)
+        final_h = final_h.permute(1, 0, 2)
+
         # Note: In case of 'global' option we are using start_pos as opposed to
         # end_pos. The intution being that hidden state has the whole
         # trajectory and relative postion at the start when combined with
         # trajectory information should help in discriminative behavior.
         if self.d_type == 'local':
-            classifier_input = final_h.squeeze()
+            classifier_input = final_h
         else:
+            start_positions = traj[:-1, :, :]
             classifier_input = self.pool_net(
-                final_h.squeeze(), seq_start_end, traj[0]
+                final_h, seq_start_end, start_positions
             )
         scores = self.real_classifier(classifier_input)
         return scores

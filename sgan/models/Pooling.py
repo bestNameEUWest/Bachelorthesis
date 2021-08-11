@@ -15,110 +15,32 @@ class PoolHiddenNet(nn.Module):
         Output:
         - pool_h: Tensor of shape (batch, bottleneck_dim)
         """
-        torch.set_printoptions(sci_mode=False)
-        # log('h_states shape', h_states.shape)
-        # log('h_states is_contiguous()', h_states.is_contiguous())
-
-        end_pos_tmp = end_pos.clone()
-        # log('end_pos_tmp.shape', end_pos_tmp.shape)
-
-        end_pos = end_pos[-1, :, :]
-        # log('end_pos.shape', end_pos.shape)
-        h_states_tmp = h_states.clone()
         pool_h = []
-        pool_h_tmp = []
         for _, (start, end) in enumerate(seq_start_end):
             start = start.item()
             end = end.item()
             num_ped = end - start
-            # INFO: their data is ( LSTM layer count X batch count X hidden state )
-            # INFO: we need to adjust here because our state is ( encoded sequence count X batch count X hidden state )
-            # TODO: adjust so it works with dim=0
-            curr_hidden = h_states.contiguous().view(-1, self.h_dim)[start:end]
-            curr_hidden_tmp = h_states_tmp.contiguous()[:, start:end]
-            # log('curr_hidden shape', curr_hidden.shape)
-            # log('curr_hidden_tmp shape', curr_hidden_tmp.shape)
-
-            curr_end_pos = end_pos[start:end]
-            curr_end_pos_tmp = end_pos_tmp[:, start:end]
+            curr_hidden = h_states.contiguous()[:, start:end]
+            curr_end_pos = end_pos[:, start:end]
 
             # Repeat -> H1, H2, H1, H2
-            curr_hidden_1 = curr_hidden.repeat(num_ped, 1)
-            # log('current_hidden_1 shape', curr_hidden_1.shape)
-
-            curr_hidden_1_tmp = curr_hidden_tmp.repeat(1, num_ped, 1)
-            # log('current_hidden_1_tmp shape', curr_hidden_1_tmp.shape)
+            curr_hidden_1 = curr_hidden.repeat(1, num_ped, 1)
 
             # Repeat position -> P1, P2, P1, P2
-            curr_end_pos_1 = curr_end_pos.repeat(num_ped, 1)
-            # log('curr_end_pos_1 shape', curr_end_pos_1.shape)
-
-            curr_end_pos_1_tmp = curr_end_pos_tmp.repeat(1, num_ped, 1)
-            # log('curr_end_pos_1_tmp shape', curr_end_pos_1_tmp.shape)
+            curr_end_pos_1 = curr_end_pos.repeat(1, num_ped, 1)
 
             # Repeat position -> P1, P1, P2, P2
-            # log('current_end_pos shape', curr_end_pos.shape)
             curr_end_pos_2 = self.repeat(curr_end_pos, num_ped)
-            # log('curr_end_pos_2 shape', curr_end_pos_2.shape)
-            # log('curr_end_pos_2', curr_end_pos_2)
-
-            # log('curr_end_pos_tmp shape', curr_end_pos_tmp.shape)
-            curr_end_pos_2_tmp = self.repeat(curr_end_pos_tmp, num_ped)
-            # log('curr_end_pos_2_tmp shape', curr_end_pos_2_tmp.shape)
-            # log('curr_end_pos_2_tmp', curr_end_pos_2_tmp)
 
             curr_rel_pos = curr_end_pos_1 - curr_end_pos_2
-            curr_rel_pos_tmp = curr_end_pos_1_tmp - curr_end_pos_2_tmp
-
-            # log('curr_rel_pos', curr_rel_pos)
-            # log('curr_rel_pos_tmp', curr_rel_pos_tmp)
-
             curr_rel_embedding = self.spatial_embedding(curr_rel_pos)
-            curr_rel_embedding_tmp = self.spatial_embedding(curr_rel_pos_tmp)
-            # log('curr_rel_embedding shape', curr_rel_embedding.shape)
-            # log('curr_rel_embedding_tmp shape', curr_rel_embedding_tmp.shape)
 
-            # INFO: Create Tensor with ( [H1, H2, H1, H2,] X [
-            # INFO:     "0"         X   H1
-            # INFO:     P1 - P2     X   H2
-            # INFO:     P2 - P1     X   H1
-            # INFO:     "0"         X   H2
-            mlp_h_input = torch.cat([curr_rel_embedding, curr_hidden_1], dim=1)
-            # log('mlp_h_input shape', mlp_h_input.shape)
+            mlp_h_input = torch.cat([curr_rel_embedding, curr_hidden_1], dim=2)
             curr_pool_h = self.mlp_pre_pool(mlp_h_input)
-            # log('curr_pool_h pre shape', curr_pool_h.shape)
-            tmp_0 = curr_pool_h.view(num_ped, num_ped, -1)
-            curr_pool_h = tmp_0.max(1)[0]
-            # log('tmp_0 shape', tmp_0.shape)
-            # log('tmp_0 ', tmp_0)
-            # log('curr_pool_h post shape', curr_pool_h.shape)
-            # log('curr_pool_h post ', curr_pool_h)
-
-            # from this point we need to temporarily check if we have the hidden state of the TF
-            # TODO: cleanup: remove if/else
-            if h_states.size(0) == 7:
-                mlp_h_input_tmp = torch.cat([curr_rel_embedding_tmp, curr_hidden_1_tmp], dim=2)
-                # log('mlp_h_input_tmp shape', mlp_h_input_tmp.shape)
-                curr_pool_h_tmp = self.mlp_pre_pool(mlp_h_input_tmp)
-                # log('curr_pool_h_tmp pre shape', curr_pool_h_tmp.shape)
-                tmp_1 = curr_pool_h_tmp.view(h_states.size(0), num_ped, num_ped, -1)
-                curr_pool_h_tmp = tmp_1.max(2)[0]
-                # log('tmp_1 shape', tmp_1.shape)
-                # log('tmp_1 ', tmp_1)
-                # log('curr_pool_h_tmp post shape', curr_pool_h_tmp.shape)
-                # log('curr_pool_h_tmp post ', curr_pool_h_tmp)
-                pool_h_tmp.append(curr_pool_h_tmp)
+            curr_pool_h = curr_pool_h.view(h_states.size(0), num_ped, num_ped, -1).max(2)[0]
             pool_h.append(curr_pool_h)
 
-        pool_h = torch.cat(pool_h, dim=0)
-        # log('pool_h shape', pool_h.shape)
-
-        # TODO: cleanup: remove if/else
-        if h_states.size(0) == 7:
-            pool_h_tmp = torch.cat(pool_h_tmp, dim=1)
-            # log('pool_h_tmp shape', pool_h_tmp.shape)
-            return pool_h_tmp
-
+        pool_h = torch.cat(pool_h, dim=1)
         return pool_h
 
     def __init__(
