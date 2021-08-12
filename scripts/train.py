@@ -425,9 +425,15 @@ def check_accuracy(args, loader, generator, discriminator, d_loss_fn, device, li
             linear_ped = 1 - non_linear_ped
             loss_mask = loss_mask[:, args.obs_len:]
 
-            pred_traj_fake_rel = generator(
-                obs_traj, obs_traj_rel, seq_start_end
-            )
+            # TODO: expand for feature_count later
+            target = pred_traj_gt_rel.permute(1, 0, 2)[:, :-1, :]
+            target_c = torch.zeros((target.shape[0], target.shape[1], 1)).to(device)
+            target = torch.cat((target, target_c), -1)
+            start_of_seq = torch.Tensor([0, 0, 1]).unsqueeze(0).unsqueeze(1).repeat(target.shape[0], 1, 1).to(device)
+            dec_inp = torch.cat((start_of_seq, target), 1)
+            trg_att = subsequent_mask(dec_inp.shape[1]).repeat(dec_inp.shape[0], 1, 1).to(device)
+
+            pred_traj_fake_rel = generator(obs_traj, obs_traj_rel, seq_start_end, dec_inp, trg_att)
             pred_traj_fake = relative_to_abs(pred_traj_fake_rel, obs_traj[-1])
 
             g_l2_loss_abs, g_l2_loss_rel = cal_l2_losses(
