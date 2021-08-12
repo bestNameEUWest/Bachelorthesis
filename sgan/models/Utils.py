@@ -17,11 +17,11 @@ def make_mlp(dim_list, activation='relu', batch_norm=True, dropout=0):
     return nn.Sequential(*layers)
 
 
-def get_noise(shape, noise_type):
+def get_noise(shape, noise_type, device):
     if noise_type == 'gaussian':
-        return torch.randn(*shape).cuda()
+        return torch.randn(*shape).to(device)
     elif noise_type == 'uniform':
-        return torch.rand(*shape).sub_(0.5).mul_(2.0).cuda()
+        return torch.rand(*shape).sub_(0.5).mul_(2.0).to(device)
     raise ValueError('Unrecognized noise type "%s"' % noise_type)
 
 

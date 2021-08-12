@@ -68,6 +68,7 @@ def parse_args():
     parser.add_argument('--num_samples_check', default=5000, type=int)
 
     # Misc
+    parser.add_argument('--cpu', action='store_true')
     parser.add_argument('--use_gpu', default=1, type=int)
     parser.add_argument('--timing', default=0, type=int)
     parser.add_argument('--gpu_num', default="0", type=str)

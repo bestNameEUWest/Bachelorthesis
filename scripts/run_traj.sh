@@ -1,4 +1,4 @@
-python train.py \
+python -m scripts.train \
   --dataset_name 'zara1' \
   --delim tab \
   --d_type 'local' \

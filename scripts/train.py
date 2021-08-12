@@ -36,24 +36,26 @@ logger = logging.getLogger(__name__)
 
 def init_weights(m):
     classname = m.__class__.__name__
-
-    #print(f"Linear find: {classname.find('Linear')}")
-    #print(f"LinearEmbedding find: {classname.find('LinearEmbedding')}")
-    #print(f"Classname: {classname}")
     if (classname.find('Linear') != -1) and classname.find('LinearEmbedding') == -1:
         nn.init.kaiming_normal_(m.weight)
 
 
 def get_dtypes(args):
-    long_dtype = torch.LongTensor
-    float_dtype = torch.FloatTensor
-    if args.use_gpu == 1:
-        long_dtype = torch.cuda.LongTensor
-        float_dtype = torch.cuda.FloatTensor
+    long_dtype = torch.cuda.LongTensor
+    float_dtype = torch.cuda.FloatTensor
+    if args.cpu or not torch.cuda.is_available():
+        long_dtype = torch.LongTensor
+        float_dtype = torch.FloatTensor
     return long_dtype, float_dtype
 
 
 def main(args):
+    device = torch.device("cuda")
+    if args.cpu or not torch.cuda.is_available():
+        device = torch.device("cpu")
+
+    # print(device)
+
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_num
     args.train_path = get_dset_path(args.dataset_name, 'train')
     args.val_path = get_dset_path(args.dataset_name, 'val')
@@ -62,12 +64,7 @@ def main(args):
     long_dtype, float_dtype = get_dtypes(args)
 
     logger.info("Initializing train dataset")
-    [train_dset, val_dset, test_dset], [train_loader, val_loader, test_loader] = \
-    dsu.dataset_loader(args)
-
-    #train_dset, train_loader = data_loader(args, args.train_path)
-    #_, val_loader = data_loader(args, args.val_path)
-
+    [train_dset, val_dset, test_dset], [train_loader, val_loader, test_loader] = dsu.dataset_loader(args)
 
     iterations_per_epoch = len(train_dset) / args.batch_size / args.d_steps
     if args.num_epochs:
@@ -80,6 +77,7 @@ def main(args):
     generator = TrajectoryGenerator(
         obs_len=args.obs_len,
         pred_len=args.pred_len,
+        device=device,
         embedding_dim=args.embedding_dim,
         encoder_h_dim=args.encoder_h_dim_g,
         decoder_h_dim=args.decoder_h_dim_g,
@@ -106,6 +104,7 @@ def main(args):
     discriminator = TrajectoryDiscriminator(
         obs_len=args.obs_len,
         pred_len=args.pred_len,
+        device=device,
         embedding_dim=args.embedding_dim,
         h_dim=args.encoder_h_dim_d,
         mlp_dim=args.mlp_dim,
@@ -193,18 +192,14 @@ def main(args):
                 step_type = 'd'
                 losses_d = discriminator_step(args, batch, generator,
                                               discriminator, d_loss_fn,
-                                              optimizer_d)
+                                              optimizer_d, device)
                 checkpoint['norm_d'].append(
                     get_total_norm(discriminator.parameters()))
                 d_steps_left -= 1
             elif g_steps_left > 0:
                 step_type = 'g'
-                losses_g = generator_step(args, batch, generator,
-                                          discriminator, g_loss_fn,
-                                          optimizer_g)
-                checkpoint['norm_g'].append(
-                    get_total_norm(generator.parameters())
-                )
+                losses_g = generator_step(args, batch, generator, discriminator, g_loss_fn, optimizer_g, device)
+                checkpoint['norm_g'].append(get_total_norm(generator.parameters()))
                 g_steps_left -= 1
 
             if args.timing == 1:
@@ -240,13 +235,10 @@ def main(args):
 
                 # Check stats on the validation set
                 logger.info('Checking stats on val ...')
-                metrics_val = check_accuracy(
-                    args, val_loader, generator, discriminator, d_loss_fn
-                )
+                metrics_val = check_accuracy(args, val_loader, generator, discriminator, d_loss_fn, device)
                 logger.info('Checking stats on train ...')
                 metrics_train = check_accuracy(
-                    args, train_loader, generator, discriminator,
-                    d_loss_fn, limit=True
+                    args, train_loader, generator, discriminator, d_loss_fn, device, limit=True
                 )
 
                 for k, v in sorted(metrics_val.items()):
@@ -307,8 +299,8 @@ def main(args):
                 break
 
 
-def discriminator_step(args, batch, generator, discriminator, d_loss_fn, optimizer_d):
-    batch = [tensor.cuda() for tensor in batch]
+def discriminator_step(args, batch, generator, discriminator, d_loss_fn, optimizer_d, device):
+    batch = [tensor.to(device) for tensor in batch]
     (obs_traj, pred_traj_gt, obs_traj_rel, pred_traj_gt_rel, non_linear_ped,
      loss_mask, seq_start_end) = batch
     losses = {}
@@ -316,11 +308,11 @@ def discriminator_step(args, batch, generator, discriminator, d_loss_fn, optimiz
 
     # TODO: expand for feature_count later
     target = pred_traj_gt_rel.permute(1, 0, 2)[:, :-1, :]
-    target_c = torch.zeros((target.shape[0], target.shape[1], 1)).cuda()
+    target_c = torch.zeros((target.shape[0], target.shape[1], 1)).to(device)
     target = torch.cat((target, target_c), -1)
-    start_of_seq = torch.Tensor([0, 0, 1]).unsqueeze(0).unsqueeze(1).repeat(target.shape[0], 1, 1).cuda()
+    start_of_seq = torch.Tensor([0, 0, 1]).unsqueeze(0).unsqueeze(1).repeat(target.shape[0], 1, 1).to(device)
     dec_inp = torch.cat((start_of_seq, target), 1)
-    trg_att = subsequent_mask(dec_inp.shape[1]).repeat(dec_inp.shape[0], 1, 1).cuda()
+    trg_att = subsequent_mask(dec_inp.shape[1]).repeat(dec_inp.shape[0], 1, 1).to(device)
 
     generator_out = generator(obs_traj, obs_traj_rel, seq_start_end, dec_inp, trg_att)
 
@@ -351,8 +343,8 @@ def discriminator_step(args, batch, generator, discriminator, d_loss_fn, optimiz
     return losses
 
 
-def generator_step(args, batch, generator, discriminator, g_loss_fn, optimizer_g):
-    batch = [tensor.cuda() for tensor in batch]
+def generator_step(args, batch, generator, discriminator, g_loss_fn, optimizer_g, device):
+    batch = [tensor.to(device) for tensor in batch]
     (obs_traj, pred_traj_gt, obs_traj_rel, pred_traj_gt_rel, non_linear_ped,
      loss_mask, seq_start_end) = batch
     losses = {}
@@ -364,11 +356,11 @@ def generator_step(args, batch, generator, discriminator, g_loss_fn, optimizer_g
     for _ in range(args.best_k):
         # TODO: expand for feature_count later
         target = pred_traj_gt_rel.permute(1, 0, 2)[:, :-1, :]
-        target_c = torch.zeros((target.shape[0], target.shape[1], 1)).cuda()
+        target_c = torch.zeros((target.shape[0], target.shape[1], 1)).to(device)
         target = torch.cat((target, target_c), -1)
-        start_of_seq = torch.Tensor([0, 0, 1]).unsqueeze(0).unsqueeze(1).repeat(target.shape[0], 1, 1).cuda()
+        start_of_seq = torch.Tensor([0, 0, 1]).unsqueeze(0).unsqueeze(1).repeat(target.shape[0], 1, 1).to(device)
         dec_inp = torch.cat((start_of_seq, target), 1)
-        trg_att = subsequent_mask(dec_inp.shape[1]).repeat(dec_inp.shape[0], 1, 1).cuda()
+        trg_att = subsequent_mask(dec_inp.shape[1]).repeat(dec_inp.shape[0], 1, 1).to(device)
 
         generator_out = generator(obs_traj, obs_traj_rel, seq_start_end, dec_inp, trg_att)
         # generator_out = generator(obs_traj, obs_traj_rel, seq_start_end)
@@ -416,9 +408,7 @@ def generator_step(args, batch, generator, discriminator, g_loss_fn, optimizer_g
     return losses
 
 
-def check_accuracy(
-    args, loader, generator, discriminator, d_loss_fn, limit=False
-):
+def check_accuracy(args, loader, generator, discriminator, d_loss_fn, device, limit=False):
     d_losses = []
     metrics = {}
     g_l2_losses_abs, g_l2_losses_rel = ([],) * 2
@@ -429,7 +419,7 @@ def check_accuracy(
     generator.eval()
     with torch.no_grad():
         for batch in loader:
-            batch = [tensor.cuda() for tensor in batch]
+            batch = [tensor.to(device) for tensor in batch]
             (obs_traj, pred_traj_gt, obs_traj_rel, pred_traj_gt_rel,
              non_linear_ped, loss_mask, seq_start_end) = batch
             linear_ped = 1 - non_linear_ped

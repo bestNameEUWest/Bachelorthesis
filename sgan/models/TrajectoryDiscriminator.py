@@ -11,7 +11,7 @@ from sgan.models.Utils import make_mlp, log
 
 class TrajectoryDiscriminator(nn.Module):
     def __init__(
-        self, obs_len, pred_len, feature_count=2, heads=8, embedding_dim=64, h_dim=64, mlp_dim=1024,
+        self, obs_len, pred_len, device, feature_count=2, heads=8, embedding_dim=64, h_dim=64, mlp_dim=1024,
         num_layers=1, activation='relu', batch_norm=True, dropout=0.0,
         d_type='local'
     ):
@@ -36,12 +36,8 @@ class TrajectoryDiscriminator(nn.Module):
         )
         # log('Trajectory d sgan enc h_dim size', h_dim)
         self.encoder = SGANEncoder(
-            injected_encoder=self.custom_transformer.encoder,
-            embedding_dim=embedding_dim,
-            h_dim=h_dim,
-            mlp_dim=mlp_dim,
-            num_layers=num_layers,
-            dropout=dropout
+            tf_encoder=self.custom_transformer.encoder,
+            device=device,
         )
 
         real_classifier_dims = [h_dim, mlp_dim, 1]

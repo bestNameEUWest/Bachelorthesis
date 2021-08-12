@@ -20,6 +20,7 @@ def get_generator(checkpoint):
     generator = TrajectoryGenerator(
         obs_len=args.obs_len,
         pred_len=args.pred_len,
+        device=device,
         embedding_dim=args.embedding_dim,
         encoder_h_dim=args.encoder_h_dim_g,
         decoder_h_dim=args.decoder_h_dim_g,
@@ -36,7 +37,7 @@ def get_generator(checkpoint):
         grid_size=args.grid_size,
         batch_norm=args.batch_norm)
     generator.load_state_dict(checkpoint['g_state'])
-    generator.cuda()
+    generator.to(device)
     generator.train()
     return generator
 
@@ -60,7 +61,7 @@ def evaluate(args, loader, generator, num_samples):
     total_traj = 0
     with torch.no_grad():
         for batch in loader:
-            batch = [tensor.cuda() for tensor in batch]
+            batch = [tensor.to(device) for tensor in batch]
             (obs_traj, pred_traj_gt, obs_traj_rel, pred_traj_gt_rel,
              non_linear_ped, loss_mask, seq_start_end) = batch
 
