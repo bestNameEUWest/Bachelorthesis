@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from sgan.models.transformer.custom_transformer import CustomTransformer
+from sgan.models.transformer.custom_transformer import TransformerEncoder, TransformerDecoder
 from sgan.models.SGANEncoder import SGANEncoder
 from sgan.models.SGANDecoder import SGANDecoder
 from sgan.models.Pooling import PoolHiddenNet, SocialPooling
@@ -12,7 +12,7 @@ from sgan.models.Utils import make_mlp, get_noise, log
 class TrajectoryGenerator(nn.Module):
     def __init__(
             self, obs_len, pred_len, device, feature_count=2, embedding_dim=64, encoder_h_dim=64,
-            decoder_h_dim=128, mlp_dim=1024, num_layers=1, noise_dim=(0,),
+            decoder_h_dim=128, mlp_dim=1024, layer_count=1, noise_dim=(0,),
             noise_type='gaussian', noise_mix_type='ped', pooling_type=None,
             pool_every_timestep=True, dropout=0.0, heads=8, bottleneck_dim=1024,
             activation='relu', batch_norm=True, neighborhood_size=2.0, grid_size=8
@@ -50,8 +50,13 @@ class TrajectoryGenerator(nn.Module):
         )
         # log('Trajectory g sgan enc encoder_h_dim size', encoder_h_dim)
         self.encoder = SGANEncoder(
-            tf_encoder=self.custom_transformer.encoder,
             device=device,
+            feature_count=feature_count,
+            layer_count=layer_count,
+            emb_size=tf_emb_size,
+            ff_size=tf_ff_size,
+            heads=heads,
+            dropout=dropout
         )
         # log('Trajectory g sgan dec decoder_h_dim size', decoder_h_dim)
         self.decoder = SGANDecoder(
@@ -116,10 +121,6 @@ class TrajectoryGenerator(nn.Module):
         """
         if not self.noise_dim:
             return _input
-        # log('_input.shape', _input.shape)
-        # log('seq_start_end shape', seq_start_end.shape)
-        # log('seq_start_end.size(0)', seq_start_end.size(0))
-        # log('self.noise_dim', self.noise_dim)
         if self.noise_mix_type == 'global':
             noise_shape = (_input.size(0), seq_start_end.size(0),) + self.noise_dim
         else:
@@ -139,14 +140,8 @@ class TrajectoryGenerator(nn.Module):
             for idx, (start, end) in enumerate(seq_start_end):
                 start = start.item()
                 end = end.item()
-                # log('z_decoder[idx] shape', z_decoder[:, idx].shape)
                 _vec = z_decoder[:, idx].view(_input.size(0), 1, -1)
-                # log('_vec shape', _vec.shape)
                 _to_cat = _vec.repeat(1, end - start, 1)
-                # log('end - start', end - start)
-                # log('_to_cat shape', _to_cat.shape)
-                # log('_input[start:end] shape ', _input[:, start:end].shape)
-                # log('_to_cat shape ', _to_cat.shape)
                 _list.append(torch.cat([_input[:, start:end], _to_cat], dim=2))
             decoder_h = torch.cat(_list, dim=1)
             return decoder_h
@@ -195,13 +190,10 @@ class TrajectoryGenerator(nn.Module):
         else:
             noise_input = mlp_decoder_context_input
 
-        # log('noise_input shape', noise_input.shape)
-        # log('final_encoder_h shape before noise', final_encoder_h.shape)
         decoder_h = self.add_noise(noise_input, seq_start_end, user_noise=user_noise)
-        # log('final_encoder_h shape after noise', final_encoder_h.shape)
 
         test = nn.Linear(self.decoder_h_dim, self.decoder_h_dim).to(self.device)
-        decoder_h = test(final_encoder_h)
+        decoder_h = test(decoder_h)
 
         # Predict Trajectory
         state_tuple = (decoder_h, None)

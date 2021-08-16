@@ -11,36 +11,25 @@ from sgan.models.Utils import make_mlp, log
 
 class TrajectoryDiscriminator(nn.Module):
     def __init__(
-        self, obs_len, pred_len, device, feature_count=2, heads=8, embedding_dim=64, h_dim=64, mlp_dim=1024,
-        num_layers=1, activation='relu', batch_norm=True, dropout=0.0,
-        d_type='local'
+        self, device, feature_count=2, layer_count=1, tf_emb_size=64, tf_ff_size=2048, heads=8,
+        embedding_dim=64, dropout=0.1, mlp_dim=1024, activation='relu', batch_norm=True, d_type='local'
     ):
         super(TrajectoryDiscriminator, self).__init__()
 
-        self.obs_len = obs_len
-        self.pred_len = pred_len
-        self.seq_len = obs_len + pred_len
-        self.mlp_dim = mlp_dim
-        self.h_dim = h_dim
         self.d_type = d_type
 
-        # log('Trajectory d tf d_model size', h_dim)
-        self.custom_transformer = CustomTransformer(
-            enc_inp_size=feature_count,
-            dec_inp_size=3,
-            dec_out_size=3,
-            n=num_layers,
-            d_model=h_dim,
-            h=heads,
-            dropout=dropout
-        )
         # log('Trajectory d sgan enc h_dim size', h_dim)
         self.encoder = SGANEncoder(
-            tf_encoder=self.custom_transformer.encoder,
             device=device,
+            feature_count=feature_count,
+            layer_count=layer_count,
+            emb_size=tf_emb_size,
+            ff_size=tf_ff_size,
+            heads=heads,
+            dropout=dropout
         )
 
-        real_classifier_dims = [h_dim, mlp_dim, 1]
+        real_classifier_dims = [tf_emb_size, mlp_dim, 1]
         self.real_classifier = make_mlp(
             real_classifier_dims,
             activation=activation,
@@ -48,12 +37,12 @@ class TrajectoryDiscriminator(nn.Module):
             dropout=dropout
         )
         if d_type == 'global':
-            mlp_pool_dims = [h_dim + embedding_dim, mlp_dim, h_dim]
+            mlp_pool_dims = [tf_emb_size + embedding_dim, mlp_dim, tf_emb_size]
             self.pool_net = PoolHiddenNet(
                 embedding_dim=embedding_dim,
-                h_dim=h_dim,
+                h_dim=tf_emb_size,
                 mlp_dim=mlp_pool_dims,
-                bottleneck_dim=h_dim,
+                bottleneck_dim=tf_emb_size,
                 activation=activation,
                 batch_norm=batch_norm
             )
@@ -68,6 +57,7 @@ class TrajectoryDiscriminator(nn.Module):
         - scores: Tensor of shape (batch,) with real/fake scores
         """
 
+        traj_rel = traj_rel.permute(1, 0, 2)
         final_h, src_att = self.encoder(traj_rel)
         final_h = final_h.permute(1, 0, 2)
 
@@ -79,8 +69,6 @@ class TrajectoryDiscriminator(nn.Module):
             classifier_input = final_h
         else:
             start_positions = traj[:-1, :, :]
-            classifier_input = self.pool_net(
-                final_h, seq_start_end, start_positions
-            )
+            classifier_input = self.pool_net(final_h, seq_start_end, start_positions)
         scores = self.real_classifier(classifier_input)
         return scores

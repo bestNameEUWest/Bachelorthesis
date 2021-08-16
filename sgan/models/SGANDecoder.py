@@ -1,20 +1,26 @@
-import torch
 import torch.nn as nn
 
-from sgan.models.Pooling import PoolHiddenNet, SocialPooling
-from sgan.models.Utils import make_mlp, log
+from sgan.models.transformer.custom_transformer import TransformerDecoder
+from sgan.models.Utils import log
 
 
 class SGANDecoder(nn.Module):
     """Decoder is part of TrajectoryGenerator"""
-    def __init__(self, seq_len, device, tf_decoder):
+    def __init__(self, dec_inp_size=3, dec_out_size=3, layer_count=6, emb_size=512, ff_size=2048, heads=8,
+                 dropout=0.1):
         super(SGANDecoder, self).__init__()
 
-        self.seq_len = seq_len
-        self.device = device
-        self.tf_decoder = tf_decoder
+        self.tf_decoder = TransformerDecoder(
+            dec_inp_size=dec_inp_size,
+            dec_out_size=dec_out_size,
+            n=layer_count,
+            d_model=emb_size,
+            d_ff=ff_size,
+            h=heads,
+            dropout=dropout,
+        )
 
-    def forward(self, state_tuple, src_att=None, dec_inp=None, trg_att=None):
+    def forward(self, state_tuple, src_att, dec_inp, trg_att):
         """
         Inputs:
         - last_pos: Tensor of shape (batch, 2)

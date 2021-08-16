@@ -1,17 +1,24 @@
 import torch
 import torch.nn as nn
 
-from sgan.models.transformer.batch import subsequent_mask
+from sgan.models.transformer.custom_transformer import TransformerEncoder
 from sgan.models.Utils import log
 
 
 class SGANEncoder(nn.Module):
     """Encoder is part of both TrajectoryGenerator and
     TrajectoryDiscriminator"""
-    def __init__(self, device, tf_encoder):
+    def __init__(self, device, feature_count, layer_count=6, emb_size=512, ff_size=2048, heads=8, dropout=0.1):
         super(SGANEncoder, self).__init__()
         self.device = device
-        self.tf_encoder = tf_encoder
+        self.tf_encoder = TransformerEncoder(
+            enc_inp_size=feature_count,
+            n=layer_count,
+            d_model=emb_size,
+            d_ff=ff_size,
+            h=heads,
+            dropout=dropout
+        )
 
     def forward(self, obs_traj):
         """
@@ -21,8 +28,7 @@ class SGANEncoder(nn.Module):
         - final_h: Tensor of shape (self.num_layers, batch, self.h_dim)
         """
 
-        tf_permute = obs_traj.clone().permute(1, 0, 2)
-        inp = tf_permute[:, 1:, :].to(self.device)
+        inp = obs_traj[:, 1:, :].to(self.device)
         src_att = torch.ones((inp.shape[0], 1, inp.shape[1])).to(self.device)
         final_h_tf = self.tf_encoder(inp, src_att)
 
