@@ -14,46 +14,56 @@ import copy
 import math
 
 
-class CustomTransformer:
-    """
-    Container class for separate calling of encoder and decoder modules.
-    """
-
-    def __init__(self, enc_inp_size, dec_inp_size, dec_out_size, n=6,
-                 d_model=512, d_ff=2048, h=8, dropout=0.1):
+class TransformerEncoder(nn.Module):
+    def __init__(self, enc_inp_size, n=6, d_model=512, d_ff=2048, h=8, dropout=0.1):
+        super(TransformerEncoder, self).__init__()
         """Helper: Construct a model from hyperparameters."""
-        c = copy.deepcopy
-        attn = MultiHeadAttention(h, d_model)
-        ff = PointerwiseFeedforward(d_model, d_ff, dropout)
-        position = PositionalEncoding(d_model, dropout)
-        self.decoderLayer = DecoderLayer(d_model, c(attn), c(attn), c(ff), dropout)
 
         self.encoder = HighLVEncoder(
-            Encoder(EncoderLayer(d_model, c(attn), c(ff), dropout), n),
-            nn.Sequential(LinearEmbedding(enc_inp_size, d_model), c(position))
+            Encoder(EncoderLayer(
+                d_model,
+                MultiHeadAttention(h, d_model),
+                PointerwiseFeedforward(d_model, d_ff, dropout),
+                dropout
+            ), n),
+            nn.Sequential(LinearEmbedding(enc_inp_size, d_model), PositionalEncoding(d_model, dropout))
         )
-        self.decoder = HighLVDecoder(
-            Decoder(DecoderLayer(d_model, c(attn), c(attn),
-                                 c(ff), dropout), n),
-            nn.Sequential(LinearEmbedding(dec_inp_size, d_model), c(position)),
-            Generator(d_model, dec_out_size)
-        )
-
-        # self.model = EncoderDecoder(
-        #     Encoder(EncoderLayer(d_model, c(attn), c(ff), dropout), N),
-        #     Decoder(DecoderLayer(d_model, c(attn), c(attn),
-        #                          c(ff), dropout), N),
-        #     nn.Sequential(LinearEmbedding(enc_inp_size,d_model), c(position)),
-        #     nn.Sequential(LinearEmbedding(dec_inp_size,d_model), c(position)),
-        #     Generator(d_model, dec_out_size))
 
         # This was important from their code.
         # Initialize parameters with Glorot / fan_avg.
-        for (p_e, p_d) in zip(self.encoder.parameters(), self.decoder.parameters()):
+        for p_e in self.encoder.parameters():
             if p_e.dim() > 1:
                 nn.init.xavier_uniform_(p_e)
+
+    def forward(self, objs_traj, src_att):
+        self.encoder(objs_traj, src_att)
+
+
+class TransformerDecoder(nn.Module):
+    def __init__(self, dec_inp_size, dec_out_size, n=6, d_model=512, d_ff=2048, h=8, dropout=0.1):
+        super(TransformerDecoder, self).__init__()
+        """Helper: Construct a model from hyperparameters."""
+
+        self.decoder = HighLVDecoder(
+            Decoder(DecoderLayer(
+                d_model,
+                MultiHeadAttention(h, d_model),
+                MultiHeadAttention(h, d_model),
+                PointerwiseFeedforward(d_model, d_ff, dropout),
+                dropout
+            ), n),
+            nn.Sequential(LinearEmbedding(dec_inp_size, d_model), PositionalEncoding(d_model, dropout)),
+            Generator(d_model, dec_out_size)
+        )
+
+        # This was important from their code.
+        # Initialize parameters with Glorot / fan_avg.
+        for p_d in self.decoder.parameters():
             if p_d.dim() > 1:
                 nn.init.xavier_uniform_(p_d)
+
+    def forward(self, encoder_h, src_att, dec_inp, trg_att):
+        self.decoder(encoder_h, src_att, dec_inp, trg_att)
 
 
 class LinearEmbedding(nn.Module):
@@ -68,7 +78,9 @@ class LinearEmbedding(nn.Module):
 
 
 class Generator(nn.Module):
-    "Define standard linear + softmax generation step."
+    """
+    Define standard linear + softmax generation step.
+    """
 
     def __init__(self, d_model, out_size):
         super(Generator, self).__init__()
