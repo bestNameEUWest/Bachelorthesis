@@ -10,7 +10,6 @@ from sgan.models.transformer.high_lv_encoder import HighLVEncoder
 from sgan.models.transformer.high_lv_decoder import HighLVDecoder
 
 import torch.nn as nn
-import copy
 import math
 
 
