@@ -15,22 +15,17 @@ parser.add_argument('--num_samples', default=20, type=int)
 parser.add_argument('--dset_type', default='test', type=str)
 
 
-def get_generator(checkpoint):
+def get_generator(checkpoint, device):
     args = AttrDict(checkpoint['args'])
     generator = TrajectoryGenerator(
-        obs_len=args.obs_len,
-        pred_len=args.pred_len,
         device=device,
-        embedding_dim=args.embedding_dim,
-        encoder_h_dim=args.encoder_h_dim_g,
-        decoder_h_dim=args.decoder_h_dim_g,
+        pool_emb_dim=args.pool_emb_dim,
+        tf_emb_dim=args.tf_emb_dim,
         mlp_dim=args.mlp_dim,
-        num_layers=args.num_layers,
         noise_dim=args.noise_dim,
         noise_type=args.noise_type,
         noise_mix_type=args.noise_mix_type,
         pooling_type=args.pooling_type,
-        pool_every_timestep=args.pool_every_timestep,
         dropout=args.dropout,
         bottleneck_dim=args.bottleneck_dim,
         neighborhood_size=args.neighborhood_size,
@@ -104,7 +99,7 @@ def main(args):
 
     for path in paths:
         checkpoint = torch.load(path)
-        generator = get_generator(checkpoint)
+        generator = get_generator(checkpoint, args.device)
         _args = AttrDict(checkpoint['args'])
         path = get_dset_path(_args.dataset_name, args.dset_type)
         _, loader = data_loader(_args, path)

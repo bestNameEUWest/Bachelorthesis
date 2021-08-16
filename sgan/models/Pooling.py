@@ -6,14 +6,33 @@ from sgan.models.Utils import make_mlp, log
 
 class PoolHiddenNet(nn.Module):
     """Pooling module as proposed in our paper"""
+    def __init__(
+        self, pool_emb_dim=64, tf_emb_dim=64, mlp_dim=1024, bottleneck_dim=1024,
+        activation='relu', batch_norm=True, dropout=0.0
+    ):
+        super(PoolHiddenNet, self).__init__()
+
+        self.mlp_dim = mlp_dim
+        self.bottleneck_dim = bottleneck_dim
+
+        mlp_pre_dim = pool_emb_dim + tf_emb_dim
+        mlp_pre_pool_dims = [mlp_pre_dim, 512, bottleneck_dim]
+
+        self.spatial_embedding = nn.Linear(2, pool_emb_dim)
+        self.mlp_pre_pool = make_mlp(
+            mlp_pre_pool_dims,
+            activation=activation,
+            batch_norm=batch_norm,
+            dropout=dropout)
+
     def forward(self, h_states, seq_start_end, end_pos):
         """
         Inputs:
-        - h_states: Tensor of shape (num_layers, batch, h_dim)
+        - h_states: Tensor of shape (num_obs, batch, h_dim)
         - seq_start_end: A list of tuples which delimit sequences within batch
-        - end_pos: Tensor of shape (batch, 2)
+        - end_pos: Tensor of shape (num_obs-1 , batch, 2)
         Output:
-        - pool_h: Tensor of shape (batch, bottleneck_dim)
+        - pool_h: Tensor of shape (num_obs, batch, bottleneck_dim)
         """
         pool_h = []
         for _, (start, end) in enumerate(seq_start_end):
@@ -43,27 +62,6 @@ class PoolHiddenNet(nn.Module):
         pool_h = torch.cat(pool_h, dim=1)
         return pool_h
 
-    def __init__(
-        self, embedding_dim=64, h_dim=64, mlp_dim=1024, bottleneck_dim=1024,
-        activation='relu', batch_norm=True, dropout=0.0
-    ):
-        super(PoolHiddenNet, self).__init__()
-
-        self.mlp_dim = 1024
-        self.h_dim = h_dim
-        self.bottleneck_dim = bottleneck_dim
-        self.embedding_dim = embedding_dim
-
-        mlp_pre_dim = embedding_dim + h_dim
-        mlp_pre_pool_dims = [mlp_pre_dim, 512, bottleneck_dim]
-
-        self.spatial_embedding = nn.Linear(2, embedding_dim)
-        self.mlp_pre_pool = make_mlp(
-            mlp_pre_pool_dims,
-            activation=activation,
-            batch_norm=batch_norm,
-            dropout=dropout)
-
     def repeat(self, tensor, num_reps):
         """
         Inputs:
@@ -72,23 +70,13 @@ class PoolHiddenNet(nn.Module):
         Outpus:
         -repeat_tensor: Repeat each row such that: R1, R1, R2, R2
         """
-        col_pos = len(tensor.size()) - 1
+        col_pos = 2
         col_len = tensor.size(col_pos)
         pred_len = tensor.size(0)
-        # log('col_pos', col_pos)
-        # log('col_len', col_len)
         tensor_t = tensor.unsqueeze(dim=col_pos)
-        # log('tensor_t shape', tensor_t.shape)
-        if col_pos == 1:
-            tensor = tensor_t.repeat(1, num_reps, 1)
-            # log('tensor shape', tensor.shape)
-            tensor = tensor.view(-1, col_len)
-        elif col_pos == 2:
-            tensor = tensor_t.repeat(1, 1, num_reps, 1)
-            # log('tensor shape', tensor.shape)
-            tensor = tensor.view(pred_len, -1, col_len)
+        tensor = tensor_t.repeat(1, 1, num_reps, 1)
+        tensor = tensor.view(pred_len, -1, col_len)
 
-        # log('tensor view shape', tensor.shape)
         return tensor
 
 

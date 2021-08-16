@@ -35,7 +35,7 @@ class TransformerEncoder(nn.Module):
                 nn.init.xavier_uniform_(p_e)
 
     def forward(self, objs_traj, src_att):
-        self.encoder(objs_traj, src_att)
+        return self.encoder(objs_traj, src_att)
 
 
 class TransformerDecoder(nn.Module):
@@ -62,7 +62,7 @@ class TransformerDecoder(nn.Module):
                 nn.init.xavier_uniform_(p_d)
 
     def forward(self, encoder_h, src_att, dec_inp, trg_att):
-        self.decoder(encoder_h, src_att, dec_inp, trg_att)
+        return self.decoder(encoder_h, src_att, dec_inp, trg_att)
 
 
 class LinearEmbedding(nn.Module):

@@ -3,17 +3,13 @@ python -m scripts.train \
   --delim tab \
   --d_type 'local' \
   --pred_len 8 \
-  --encoder_h_dim_g 32 \
-  --encoder_h_dim_d 64\
-  --decoder_h_dim 32 \
-  --embedding_dim 16 \
-  --bottleneck_dim 32 \
+  --tf_emb_dim 512 \
+  --pool_emb_dim 16 \
+  --bottleneck_dim 512 \
   --mlp_dim 64 \
-  --num_layers 1 \
   --noise_dim 8 \
   --noise_type gaussian \
   --noise_mix_type global \
-  --pool_every_timestep 0 \
   --l2_loss_weight 1 \
   --batch_norm 0 \
   --dropout 0 \

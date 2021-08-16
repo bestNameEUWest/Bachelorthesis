@@ -20,16 +20,13 @@ class SGANEncoder(nn.Module):
             dropout=dropout
         )
 
-    def forward(self, obs_traj):
+    def forward(self, obs_traj, src_att):
         """
         Inputs:
         - obs_traj: Tensor of shape (obs_len, batch, 2)
         Output:
         - final_h: Tensor of shape (self.num_layers, batch, self.h_dim)
         """
+        final_h_tf = self.tf_encoder(obs_traj, src_att)
 
-        inp = obs_traj[:, 1:, :].to(self.device)
-        src_att = torch.ones((inp.shape[0], 1, inp.shape[1])).to(self.device)
-        final_h_tf = self.tf_encoder(inp, src_att)
-
-        return final_h_tf, src_att
+        return final_h_tf

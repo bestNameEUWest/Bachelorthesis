@@ -2,17 +2,14 @@ import torch
 import torch.nn as nn
 
 from sgan.models.SGANEncoder import SGANEncoder
-from sgan.models.SGANDecoder import SGANDecoder
-from sgan.models.Pooling import PoolHiddenNet, SocialPooling
-from sgan.models.transformer.custom_transformer import CustomTransformer
-
+from sgan.models.Pooling import PoolHiddenNet
 from sgan.models.Utils import make_mlp, log
 
 
 class TrajectoryDiscriminator(nn.Module):
     def __init__(
-        self, device, feature_count=2, layer_count=1, tf_emb_size=64, tf_ff_size=2048, heads=8,
-        embedding_dim=64, dropout=0.1, mlp_dim=1024, activation='relu', batch_norm=True, d_type='local'
+        self, device, feature_count=2, layer_count=1, tf_emb_dim=64, tf_ff_size=2048, heads=8, bottleneck_dim=1024,
+        pool_emb_dim=64, dropout=0.1, mlp_dim=1024, activation='relu', batch_norm=True, d_type='local',
     ):
         super(TrajectoryDiscriminator, self).__init__()
 
@@ -23,13 +20,13 @@ class TrajectoryDiscriminator(nn.Module):
             device=device,
             feature_count=feature_count,
             layer_count=layer_count,
-            emb_size=tf_emb_size,
+            emb_size=tf_emb_dim,
             ff_size=tf_ff_size,
             heads=heads,
             dropout=dropout
         )
 
-        real_classifier_dims = [tf_emb_size, mlp_dim, 1]
+        real_classifier_dims = [tf_emb_dim, mlp_dim, 1]
         self.real_classifier = make_mlp(
             real_classifier_dims,
             activation=activation,
@@ -37,12 +34,12 @@ class TrajectoryDiscriminator(nn.Module):
             dropout=dropout
         )
         if d_type == 'global':
-            mlp_pool_dims = [tf_emb_size + embedding_dim, mlp_dim, tf_emb_size]
+            mlp_pool_dims = [tf_emb_dim + pool_emb_dim, mlp_dim, tf_emb_dim]
             self.pool_net = PoolHiddenNet(
-                embedding_dim=embedding_dim,
-                h_dim=tf_emb_size,
+                pool_emb_dim=pool_emb_dim,
+                h_dim=tf_emb_dim,
                 mlp_dim=mlp_pool_dims,
-                bottleneck_dim=tf_emb_size,
+                bottleneck_dim=bottleneck_dim,
                 activation=activation,
                 batch_norm=batch_norm
             )
@@ -58,7 +55,9 @@ class TrajectoryDiscriminator(nn.Module):
         """
 
         traj_rel = traj_rel.permute(1, 0, 2)
-        final_h, src_att = self.encoder(traj_rel)
+        src_att = torch.ones((traj_rel.shape[0], 1, traj_rel.shape[1])).to(traj_rel)
+
+        final_h = self.encoder(traj_rel, src_att)
         final_h = final_h.permute(1, 0, 2)
 
         # Note: In case of 'global' option we are using start_pos as opposed to
