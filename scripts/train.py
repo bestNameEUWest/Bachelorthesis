@@ -319,7 +319,7 @@ def discriminator_step(args, batch, generator, discriminator, d_loss_fn, optimiz
     # Compute loss with optional gradient penalty
     data_loss = d_loss_fn(scores_real, scores_fake)
     losses['D_data_loss'] = data_loss.item()
-    loss += data_loss
+    loss += float(data_loss)
     losses['D_total_loss'] = loss.item()
 
     optimizer_d.zero_grad()
@@ -372,9 +372,9 @@ def generator_step(args, batch, generator, discriminator, g_loss_fn, optimizer_g
             _g_l2_loss_rel = torch.sum(_g_l2_loss_rel, dim=0)
             _g_l2_loss_rel = torch.min(_g_l2_loss_rel) / torch.sum(
                 loss_mask[start:end])
-            g_l2_loss_sum_rel += _g_l2_loss_rel
+            g_l2_loss_sum_rel += float(_g_l2_loss_rel)
         losses['G_l2_loss_rel'] = g_l2_loss_sum_rel.item()
-        loss += g_l2_loss_sum_rel
+        loss += float(g_l2_loss_sum_rel)
 
     traj_fake = torch.cat([obs_traj, pred_traj_fake], dim=0)
     traj_fake_rel = torch.cat([obs_traj_rel, pred_traj_fake_rel], dim=0)
@@ -382,7 +382,7 @@ def generator_step(args, batch, generator, discriminator, g_loss_fn, optimizer_g
     scores_fake = discriminator(traj_fake, traj_fake_rel, seq_start_end)
     discriminator_loss = g_loss_fn(scores_fake)
 
-    loss += discriminator_loss
+    loss += float(discriminator_loss)
     losses['G_discriminator_loss'] = discriminator_loss.item()
     losses['G_total_loss'] = loss.item()
 
@@ -457,10 +457,10 @@ def check_accuracy(args, loader, generator, discriminator, d_loss_fn, device, li
             f_disp_error_l.append(fad_l.item())
             f_disp_error_nl.append(fad_nl.item())
 
-            loss_mask_sum += torch.numel(loss_mask.data)
+            loss_mask_sum += float(torch.numel(loss_mask.data))
             total_traj += pred_traj_gt.size(1)
-            total_traj_l += torch.sum(linear_ped).item()
-            total_traj_nl += torch.sum(non_linear_ped).item()
+            total_traj_l += float(torch.sum(linear_ped).item())
+            total_traj_nl += float(torch.sum(non_linear_ped).item())
             if limit and total_traj >= args.num_samples_check:
                 break
 
