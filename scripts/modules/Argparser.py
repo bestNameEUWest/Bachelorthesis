@@ -23,6 +23,7 @@ def parse_args():
     parser.add_argument('--pool_emb_dim', default=64, type=int)
     parser.add_argument('--tf_emb_dim', default=512, type=int)
     parser.add_argument('--tf_ff_size', default=2048, type=int)
+    parser.add_argument('--layer_count', default=6, type=int)
     parser.add_argument('--dropout', default=0, type=float)
     parser.add_argument('--batch_norm', default=0, type=bool_flag)
     parser.add_argument('--mlp_dim', default=1024, type=int)

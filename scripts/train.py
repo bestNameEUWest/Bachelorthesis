@@ -85,7 +85,9 @@ def main(args):
         pooling_type=args.pooling_type,
         dropout=args.dropout,
         bottleneck_dim=args.bottleneck_dim,
-        batch_norm=args.batch_norm)
+        batch_norm=args.batch_norm,
+        layer_count=args.layer_count
+    )
 
     generator.apply(init_weights)
     generator.type(float_dtype).train()
@@ -119,9 +121,9 @@ def main(args):
     if args.checkpoint_start_from is not None:
         restore_path = args.checkpoint_start_from
     elif args.restore_from_checkpoint == 1:
-        restore_path = os.path.join(args.output_dir,
-                                    '%s_with_model.pt' % args.checkpoint_name)
-
+        restore_path = os.path.join(args.output_dir, '%s_with_model.pt' % args.checkpoint_name)
+    print(os.path.isfile(restore_path))
+    print(restore_path)
     if restore_path is not None and os.path.isfile(restore_path):
         logger.info(f'Restoring from checkpoint {restore_path}')
         checkpoint = torch.load(restore_path)
@@ -228,6 +230,9 @@ def main(args):
                 metrics_train = check_accuracy(
                     args, train_loader, generator, discriminator, d_loss_fn, device, limit=True
                 )
+                metrics_train['epoch'] = epoch
+                metrics_val['epoch'] = epoch
+
                 logger.info(f'Metrics train:\n{metrics_train}')
                 logger.info(f'Metrics val:\n{metrics_val}')
                 for k, v in sorted(metrics_val.items()):
@@ -372,9 +377,9 @@ def generator_step(args, batch, generator, discriminator, g_loss_fn, optimizer_g
             _g_l2_loss_rel = torch.sum(_g_l2_loss_rel, dim=0)
             _g_l2_loss_rel = torch.min(_g_l2_loss_rel) / torch.sum(
                 loss_mask[start:end])
-            g_l2_loss_sum_rel += float(_g_l2_loss_rel)
+            g_l2_loss_sum_rel += _g_l2_loss_rel
         losses['G_l2_loss_rel'] = g_l2_loss_sum_rel.item()
-        loss += float(g_l2_loss_sum_rel)
+        loss += g_l2_loss_sum_rel
 
     traj_fake = torch.cat([obs_traj, pred_traj_fake], dim=0)
     traj_fake_rel = torch.cat([obs_traj_rel, pred_traj_fake_rel], dim=0)
@@ -457,10 +462,10 @@ def check_accuracy(args, loader, generator, discriminator, d_loss_fn, device, li
             f_disp_error_l.append(fad_l.item())
             f_disp_error_nl.append(fad_nl.item())
 
-            loss_mask_sum += float(torch.numel(loss_mask.data))
+            loss_mask_sum += torch.numel(loss_mask.data)
             total_traj += pred_traj_gt.size(1)
-            total_traj_l += float(torch.sum(linear_ped).item())
-            total_traj_nl += float(torch.sum(non_linear_ped).item())
+            total_traj_l += torch.sum(linear_ped).item()
+            total_traj_nl += torch.sum(non_linear_ped).item()
             if limit and total_traj >= args.num_samples_check:
                 break
 

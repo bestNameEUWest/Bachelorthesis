@@ -28,4 +28,5 @@ python -m scripts.train \
   --best_k 10 \
   --gpu_num 1 \
   --checkpoint_name gan_test \
-  --restore_from_checkpoint 0
+  --restore_from_checkpoint 1 \
+  --layer_count 2
