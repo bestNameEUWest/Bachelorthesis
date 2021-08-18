@@ -4,6 +4,7 @@ python -m scripts.train \
   --d_type 'local' \
   --pred_len 12 \
   --tf_emb_dim 128 \
+  --tf_ff_size 128 \
   --pool_emb_dim 16 \
   --bottleneck_dim 128 \
   --mlp_dim 64 \

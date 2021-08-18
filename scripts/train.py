@@ -85,8 +85,6 @@ def main(args):
         pooling_type=args.pooling_type,
         dropout=args.dropout,
         bottleneck_dim=args.bottleneck_dim,
-        neighborhood_size=args.neighborhood_size,
-        grid_size=args.grid_size,
         batch_norm=args.batch_norm)
 
     generator.apply(init_weights)

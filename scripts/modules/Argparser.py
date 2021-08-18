@@ -22,6 +22,7 @@ def parse_args():
     # Model Options
     parser.add_argument('--pool_emb_dim', default=64, type=int)
     parser.add_argument('--tf_emb_dim', default=512, type=int)
+    parser.add_argument('--tf_ff_size', default=2048, type=int)
     parser.add_argument('--dropout', default=0, type=float)
     parser.add_argument('--batch_norm', default=0, type=bool_flag)
     parser.add_argument('--mlp_dim', default=1024, type=int)
@@ -37,10 +38,6 @@ def parse_args():
     # Pooling Options
     parser.add_argument('--pooling_type', default='pool_net')
     parser.add_argument('--bottleneck_dim', default=1024, type=int)
-
-    # Social Pooling Options
-    parser.add_argument('--neighborhood_size', default=2.0, type=float)
-    parser.add_argument('--grid_size', default=8, type=int)
 
     # Discriminator Options
     parser.add_argument('--d_type', default='local', type=str)
