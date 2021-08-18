@@ -2,19 +2,19 @@ python -m scripts.train \
   --dataset_name 'zara1' \
   --delim tab \
   --d_type 'local' \
-  --pred_len 12 \
-  --tf_emb_dim 128 \
-  --tf_ff_size 128 \
+  --pred_len 8 \
+  --tf_emb_dim 32 \
+  --tf_ff_size 32 \
   --pool_emb_dim 16 \
-  --bottleneck_dim 128 \
+  --bottleneck_dim 16 \
   --mlp_dim 64 \
-  --noise_dim 8 \
+  --noise_dim 4 \
   --noise_type gaussian \
   --noise_mix_type global \
   --l2_loss_weight 1 \
   --batch_norm 0 \
   --dropout 0 \
-  --batch_size 32 \
+  --batch_size 16 \
   --g_learning_rate 1e-3 \
   --g_steps 1 \
   --d_learning_rate 1e-3 \
@@ -29,4 +29,5 @@ python -m scripts.train \
   --gpu_num 1 \
   --checkpoint_name gan_test \
   --restore_from_checkpoint 1 \
-  --layer_count 2
+  --layer_count 2 \
+  --timing 1

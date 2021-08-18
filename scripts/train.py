@@ -191,21 +191,21 @@ def main(args):
                 losses_g = generator_step(args, batch, generator, discriminator, g_loss_fn, optimizer_g, device)
                 checkpoint['norm_g'].append(get_total_norm(generator.parameters()))
                 g_steps_left -= 1
-
+            print('test1')
             if args.timing == 1:
                 torch.cuda.synchronize()
                 t2 = time.time()
                 logger.info(f'{step_type} step took {t2 - t1}')
-
+            print('test2')
             # Skip the rest if we are not at the end of an iteration
             if d_steps_left > 0 or g_steps_left > 0:
                 continue
-
+            print('test3')
             if args.timing == 1:
                 if t0 is not None:
                     logger.info(f'Interation {t - 1} took {time.time() - t0}')
                 t0 = time.time()
-
+            print('test4')
             # Maybe save loss
             if t % args.print_every == 0:
                 logger.info(f't = {t + 1} / {args.num_iterations}')
@@ -216,7 +216,7 @@ def main(args):
                     logger.info('  [G] {}: {:.3f}'.format(k, v))
                     checkpoint['G_losses'][k].append(v)
                 checkpoint['losses_ts'].append(t)
-
+            print('test5')
             # Maybe save a checkpoint
             if t > 0 and t % args.checkpoint_every == 0:
                 checkpoint['counters']['t'] = t
@@ -285,6 +285,8 @@ def main(args):
                         small_checkpoint[k] = v
                 torch.save(small_checkpoint, checkpoint_path)
                 logger.info('Done.')
+                print('test6')
+                print(torch.cuda.memory_allocated())
 
             t += 1
             d_steps_left = args.d_steps
