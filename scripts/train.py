@@ -319,7 +319,7 @@ def discriminator_step(args, batch, generator, discriminator, d_loss_fn, optimiz
     # Compute loss with optional gradient penalty
     data_loss = d_loss_fn(scores_real, scores_fake)
     losses['D_data_loss'] = data_loss.item()
-    loss += float(data_loss)
+    loss += data_loss
     losses['D_total_loss'] = loss.item()
 
     optimizer_d.zero_grad()
@@ -382,7 +382,7 @@ def generator_step(args, batch, generator, discriminator, g_loss_fn, optimizer_g
     scores_fake = discriminator(traj_fake, traj_fake_rel, seq_start_end)
     discriminator_loss = g_loss_fn(scores_fake)
 
-    loss += float(discriminator_loss)
+    loss += discriminator_loss
     losses['G_discriminator_loss'] = discriminator_loss.item()
     losses['G_total_loss'] = loss.item()
 
