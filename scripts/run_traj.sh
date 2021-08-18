@@ -3,9 +3,9 @@ python -m scripts.train \
   --delim tab \
   --d_type 'local' \
   --pred_len 12 \
-  --tf_emb_dim 512 \
+  --tf_emb_dim 128 \
   --pool_emb_dim 16 \
-  --bottleneck_dim 512 \
+  --bottleneck_dim 128 \
   --mlp_dim 64 \
   --noise_dim 8 \
   --noise_type gaussian \
