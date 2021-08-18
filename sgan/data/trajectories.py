@@ -119,14 +119,14 @@ class TrajectoryDataset(Dataset):
                 peds_in_curr_seq = np.unique(curr_seq_data[:, 1])
 
                 # -> walking sequence of possible pedestrians
-                curr_seq_rel = np.zeros((len(peds_in_curr_seq), 2,self.seq_len))
+                curr_seq_rel = np.zeros((len(peds_in_curr_seq), 2, self.seq_len))
                 curr_seq = np.zeros((len(peds_in_curr_seq), 2, self.seq_len))
-                
+
                 # -> why?
                 curr_loss_mask = np.zeros((len(peds_in_curr_seq), self.seq_len))
                 num_peds_considered = 0
                 _non_linear_ped = []
-                                
+
                 # log('',)
                 for _, ped_id in enumerate(peds_in_curr_seq):                    
                     curr_ped_seq = curr_seq_data[curr_seq_data[:, 1] == ped_id, :]

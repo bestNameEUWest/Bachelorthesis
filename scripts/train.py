@@ -230,24 +230,25 @@ def main(args):
                 metrics_train = check_accuracy(
                     args, train_loader, generator, discriminator, d_loss_fn, device, limit=True
                 )
-
+                logger.info(f'Metrics train:\n{metrics_train}')
+                logger.info(f'Metrics val:\n{metrics_val}')
                 for k, v in sorted(metrics_val.items()):
-                    logger.info('  [val] {}: {:.3f}'.format(k, v))
+                    # logger.info('  [val] {}: {:.3f}'.format(k, v))
                     checkpoint['metrics_val'][k].append(v)
                 for k, v in sorted(metrics_train.items()):
-                    logger.info('  [train] {}: {:.3f}'.format(k, v))
+                    # logger.info('  [train] {}: {:.3f}'.format(k, v))
                     checkpoint['metrics_train'][k].append(v)
 
-                min_ade = min(checkpoint['metrics_val']['ade'])
-                min_ade_nl = min(checkpoint['metrics_val']['ade_nl'])
+                min_mad = min(checkpoint['metrics_val']['mad'])
+                min_mad_nl = min(checkpoint['metrics_val']['mad_nl'])
 
-                if metrics_val['ade'] == min_ade:
+                if metrics_val['mad'] == min_mad:
                     logger.info('New low for avg_disp_error')
                     checkpoint['best_t'] = t
                     checkpoint['g_best_state'] = generator.state_dict()
                     checkpoint['d_best_state'] = discriminator.state_dict()
 
-                if metrics_val['ade_nl'] == min_ade_nl:
+                if metrics_val['mad_nl'] == min_mad_nl:
                     logger.info('New low for avg_disp_error_nl')
                     checkpoint['best_t_nl'] = t
                     checkpoint['g_best_nl_state'] = generator.state_dict()
@@ -430,11 +431,11 @@ def check_accuracy(args, loader, generator, discriminator, d_loss_fn, device, li
                 pred_traj_gt, pred_traj_gt_rel, pred_traj_fake,
                 pred_traj_fake_rel, loss_mask
             )
-            ade, ade_l, ade_nl = cal_ade(
+            mad, mad_l, mad_nl = cal_mad(
                 pred_traj_gt, pred_traj_fake, linear_ped, non_linear_ped
             )
 
-            fde, fde_l, fde_nl = cal_fde(
+            fad, fad_l, fad_nl = cal_fad(
                 pred_traj_gt, pred_traj_fake, linear_ped, non_linear_ped
             )
 
@@ -451,12 +452,12 @@ def check_accuracy(args, loader, generator, discriminator, d_loss_fn, device, li
 
             g_l2_losses_abs.append(g_l2_loss_abs.item())
             g_l2_losses_rel.append(g_l2_loss_rel.item())
-            disp_error.append(ade.item())
-            disp_error_l.append(ade_l.item())
-            disp_error_nl.append(ade_nl.item())
-            f_disp_error.append(fde.item())
-            f_disp_error_l.append(fde_l.item())
-            f_disp_error_nl.append(fde_nl.item())
+            disp_error.append(mad.item())
+            disp_error_l.append(mad_l.item())
+            disp_error_nl.append(mad_nl.item())
+            f_disp_error.append(fad.item())
+            f_disp_error_l.append(fad_l.item())
+            f_disp_error_nl.append(fad_nl.item())
 
             loss_mask_sum += torch.numel(loss_mask.data)
             total_traj += pred_traj_gt.size(1)
@@ -469,57 +470,44 @@ def check_accuracy(args, loader, generator, discriminator, d_loss_fn, device, li
     metrics['g_l2_loss_abs'] = sum(g_l2_losses_abs) / loss_mask_sum
     metrics['g_l2_loss_rel'] = sum(g_l2_losses_rel) / loss_mask_sum
 
-    metrics['ade'] = sum(disp_error) / (total_traj * args.pred_len)
-    metrics['fde'] = sum(f_disp_error) / total_traj
+    metrics['mad'] = sum(disp_error) / (total_traj * args.pred_len)
+    metrics['fad'] = sum(f_disp_error) / total_traj
     if total_traj_l != 0:
-        metrics['ade_l'] = sum(disp_error_l) / (total_traj_l * args.pred_len)
-        metrics['fde_l'] = sum(f_disp_error_l) / total_traj_l
+        metrics['mad_l'] = sum(disp_error_l) / (total_traj_l * args.pred_len)
+        metrics['fad_l'] = sum(f_disp_error_l) / total_traj_l
     else:
-        metrics['ade_l'] = 0
-        metrics['fde_l'] = 0
+        metrics['mad_l'] = 0
+        metrics['fad_l'] = 0
     if total_traj_nl != 0:
-        metrics['ade_nl'] = sum(disp_error_nl) / (
+        metrics['mad_nl'] = sum(disp_error_nl) / (
             total_traj_nl * args.pred_len)
-        metrics['fde_nl'] = sum(f_disp_error_nl) / total_traj_nl
+        metrics['fad_nl'] = sum(f_disp_error_nl) / total_traj_nl
     else:
-        metrics['ade_nl'] = 0
-        metrics['fde_nl'] = 0
+        metrics['mad_nl'] = 0
+        metrics['fad_nl'] = 0
 
     generator.train()
     return metrics
 
 
-def cal_l2_losses(
-    pred_traj_gt, pred_traj_gt_rel, pred_traj_fake, pred_traj_fake_rel,
-    loss_mask
-):
-    g_l2_loss_abs = l2_loss(
-        pred_traj_fake, pred_traj_gt, loss_mask, mode='sum'
-    )
-    g_l2_loss_rel = l2_loss(
-        pred_traj_fake_rel, pred_traj_gt_rel, loss_mask, mode='sum'
-    )
+def cal_l2_losses(pred_traj_gt, pred_traj_gt_rel, pred_traj_fake, pred_traj_fake_rel, loss_mask):
+    g_l2_loss_abs = l2_loss(pred_traj_fake, pred_traj_gt, loss_mask, mode='sum')
+    g_l2_loss_rel = l2_loss(pred_traj_fake_rel, pred_traj_gt_rel, loss_mask, mode='sum')
     return g_l2_loss_abs, g_l2_loss_rel
 
 
-def cal_ade(pred_traj_gt, pred_traj_fake, linear_ped, non_linear_ped):
-    ade = displacement_error(pred_traj_fake, pred_traj_gt)
-    ade_l = displacement_error(pred_traj_fake, pred_traj_gt, linear_ped)
-    ade_nl = displacement_error(pred_traj_fake, pred_traj_gt, non_linear_ped)
-    return ade, ade_l, ade_nl
+def cal_mad(pred_traj_gt, pred_traj_fake, linear_ped, non_linear_ped):
+    mad = displacement_error(pred_traj_fake, pred_traj_gt)
+    mad_l = displacement_error(pred_traj_fake, pred_traj_gt, linear_ped)
+    mad_nl = displacement_error(pred_traj_fake, pred_traj_gt, non_linear_ped)
+    return mad, mad_l, mad_nl
 
 
-def cal_fde(
-    pred_traj_gt, pred_traj_fake, linear_ped, non_linear_ped
-):
-    fde = final_displacement_error(pred_traj_fake[-1], pred_traj_gt[-1])
-    fde_l = final_displacement_error(
-        pred_traj_fake[-1], pred_traj_gt[-1], linear_ped
-    )
-    fde_nl = final_displacement_error(
-        pred_traj_fake[-1], pred_traj_gt[-1], non_linear_ped
-    )
-    return fde, fde_l, fde_nl
+def cal_fad(pred_traj_gt, pred_traj_fake, linear_ped, non_linear_ped):
+    fad = final_displacement_error(pred_traj_fake[-1], pred_traj_gt[-1])
+    fad_l = final_displacement_error(pred_traj_fake[-1], pred_traj_gt[-1], linear_ped)
+    fad_nl = final_displacement_error(pred_traj_fake[-1], pred_traj_gt[-1], non_linear_ped)
+    return fad, fad_l, fad_nl
 
 
 if __name__ == '__main__':

@@ -2,7 +2,7 @@ python -m scripts.train \
   --dataset_name 'zara1' \
   --delim tab \
   --d_type 'local' \
-  --pred_len 8 \
+  --pred_len 12 \
   --tf_emb_dim 512 \
   --pool_emb_dim 16 \
   --bottleneck_dim 512 \

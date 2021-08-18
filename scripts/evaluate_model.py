@@ -52,7 +52,7 @@ def evaluate_helper(error, seq_start_end):
 
 
 def evaluate(args, loader, generator, num_samples):
-    ade_outer, fde_outer = [], []
+    mad_outer, fad_outer = [], []
     total_traj = 0
     with torch.no_grad():
         for batch in loader:
@@ -60,7 +60,7 @@ def evaluate(args, loader, generator, num_samples):
             (obs_traj, pred_traj_gt, obs_traj_rel, pred_traj_gt_rel,
              non_linear_ped, loss_mask, seq_start_end) = batch
 
-            ade, fde = [], []
+            mad, fad = [], []
             total_traj += pred_traj_gt.size(1)
 
             for _ in range(num_samples):
@@ -70,21 +70,21 @@ def evaluate(args, loader, generator, num_samples):
                 pred_traj_fake = relative_to_abs(
                     pred_traj_fake_rel, obs_traj[-1]
                 )
-                ade.append(displacement_error(
+                mad.append(displacement_error(
                     pred_traj_fake, pred_traj_gt, mode='raw'
                 ))
-                fde.append(final_displacement_error(
+                fad.append(final_displacement_error(
                     pred_traj_fake[-1], pred_traj_gt[-1], mode='raw'
                 ))
 
-            ade_sum = evaluate_helper(ade, seq_start_end)
-            fde_sum = evaluate_helper(fde, seq_start_end)
+            mad_sum = evaluate_helper(mad, seq_start_end)
+            fad_sum = evaluate_helper(fad, seq_start_end)
 
-            ade_outer.append(ade_sum)
-            fde_outer.append(fde_sum)
-        ade = sum(ade_outer) / (total_traj * args.pred_len)
-        fde = sum(fde_outer) / (total_traj)
-        return ade, fde
+            mad_outer.append(mad_sum)
+            fad_outer.append(fad_sum)
+        mad = sum(mad_outer) / (total_traj * args.pred_len)
+        fad = sum(fad_outer) / (total_traj)
+        return mad, fad
 
 
 def main(args):
@@ -103,9 +103,9 @@ def main(args):
         _args = AttrDict(checkpoint['args'])
         path = get_dset_path(_args.dataset_name, args.dset_type)
         _, loader = data_loader(_args, path)
-        ade, fde = evaluate(_args, loader, generator, args.num_samples)
-        print('Dataset: {}, Pred Len: {}, ADE: {:.2f}, FDE: {:.2f}'.format(
-            _args.dataset_name, _args.pred_len, ade, fde))
+        mad, fad = evaluate(_args, loader, generator, args.num_samples)
+        print('Dataset: {}, Pred Len: {}, MAD: {:.2f}, FAD: {:.2f}'.format(
+            _args.dataset_name, _args.pred_len, mad, fad))
 
 
 if __name__ == '__main__':

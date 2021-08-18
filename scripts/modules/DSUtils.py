@@ -102,10 +102,7 @@ def format_raw_dataset(args):
         data = pd.read_csv(os.path.join(args.raw_dataset_folder, args.dataset_name, dataset))
         data = data.rename(columns={'trackId': 'obj', 'xCenter': 'x', 'yCenter': 'y'})
         data = data[relevant_cols]
-        
-        if args.use_classes:
-           data = add_classes(data, args, metaset)
-          
+
         raw_data = data.astype(np.float32)    
         objs = raw_data.obj.unique()
         np.random.seed(42)
