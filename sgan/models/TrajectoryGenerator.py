@@ -26,8 +26,6 @@ class TrajectoryGenerator(nn.Module):
         self.pooling_type = pooling_type
         self.noise_first_dim = 0
 
-        self.test = nn.Linear(pool_emb_dim + tf_emb_dim, tf_emb_dim)
-
         self.encoder = STFEncoder(
             device=device,
             feature_count=feature_count,
