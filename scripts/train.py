@@ -3,27 +3,27 @@ import logging
 import sys
 import os
 import time
+import datetime
 
 from collections import defaultdict
+
+import pandas as pd
+import optuna
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
 
-
 import scripts.modules.Argparser as ap
 import scripts.modules.DSUtils as dsu
-import sgan.models.transformer.custom_transformer
 
 from sgan.losses import gan_g_loss, gan_d_loss, l2_loss
 from sgan.losses import displacement_error, final_displacement_error
 
-from sgan.data.loader import data_loader
-
 from sgan.models.TrajectoryGenerator import TrajectoryGenerator
 from sgan.models.TrajectoryDiscriminator import TrajectoryDiscriminator
 
-from scripts.modules.Utils import get_total_norm, relative_to_abs, get_dset_path
+from scripts.modules.Utils import get_total_norm, relative_to_abs, get_dset_path, int_tuple
 from sgan.models.Utils import log
 from sgan.models.transformer.batch import subsequent_mask
 
@@ -49,12 +49,30 @@ def get_dtypes(args):
     return long_dtype, float_dtype
 
 
-def main(args):
+study_counter = None
+run_identifier = f"{datetime.datetime.now():%d-%m-%Y__%H:%M:%S}"
+
+
+def objective(trial):
+    args = ap.parse_args()
     device = torch.device("cuda")
     if args.cpu or not torch.cuda.is_available():
         device = torch.device("cpu")
 
-    # print(device)
+    # Define hyperparams
+    args.tf_emb_dim = 2 ** trial.suggest_int("tf_emb_dim_exp", 6, 8)  # 64 - 256
+    args.tf_ff_size = 2 ** trial.suggest_int("tf_ff_size_exp", 4, 10)  # 32 - 1024
+    args.pool_emb_dim = 2 ** trial.suggest_int("pool_emb_dim_exp", 4, 8)  # 32 - 256
+    args.bottleneck_dim = 2 ** trial.suggest_int("bottleneck_dim_exp", 3, 7)  # 16 - 128
+    args.mlp_dim = 2 ** trial.suggest_int("mlp_dim_exp", 3, 6)  # 16 - 64
+    args.noise_dim = (2 ** trial.suggest_int("noise_dim_exp", 2, 5),)  # 4 - 32
+    args.layer_count = trial.suggest_int("layer_count", 1, 6)
+    args.g_learning_rate = trial.suggest_float("g_learning_rate", 1e-5, 1e-2, log=True)
+    args.d_learning_rate = trial.suggest_float("d_learning_rate", 1e-5, 1e-2, log=True)
+    args.heads = 2 ** trial.suggest_int("heads_exp", 1, 3)  # 2 - 8
+
+    print(trial.params)
+
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_num
     args.train_path = get_dset_path(args.dataset_name, 'train')
@@ -64,11 +82,9 @@ def main(args):
     long_dtype, float_dtype = get_dtypes(args)
 
     logger.info("Initializing train dataset")
-    [train_dset, val_dset, test_dset], [train_loader, val_loader, test_loader] = dsu.dataset_loader(args)
+    [train_loader, val_loader, test_loader] = dsu.dataset_loader(args)
 
-    iterations_per_epoch = len(train_dset) / args.batch_size / args.d_steps
-    if args.num_epochs:
-        args.num_iterations = int(iterations_per_epoch * args.num_epochs)
+    iterations_per_epoch = len(train_loader) / args.d_steps
 
     logger.info(
         f'There are {iterations_per_epoch} iterations per epoch'
@@ -86,7 +102,9 @@ def main(args):
         dropout=args.dropout,
         bottleneck_dim=args.bottleneck_dim,
         batch_norm=args.batch_norm,
-        layer_count=args.layer_count
+        layer_count=args.layer_count,
+        activation='leakyrelu',
+        heads=args.heads,
     )
 
     generator.apply(init_weights)
@@ -101,7 +119,9 @@ def main(args):
         mlp_dim=args.mlp_dim,
         dropout=args.dropout,
         batch_norm=args.batch_norm,
-        d_type=args.d_type)
+        d_type=args.d_type,
+        activation='leakyrelu',
+    )
 
     discriminator.apply(init_weights)
     discriminator.type(float_dtype).train()
@@ -112,18 +132,15 @@ def main(args):
     d_loss_fn = gan_d_loss
 
     optimizer_g = optim.Adam(generator.parameters(), lr=args.g_learning_rate)
-    optimizer_d = optim.Adam(
-        discriminator.parameters(), lr=args.d_learning_rate
-    )
+    optimizer_d = optim.Adam(discriminator.parameters(), lr=args.d_learning_rate)
 
     # Maybe restore from checkpoint
     restore_path = None
     if args.checkpoint_start_from is not None:
         restore_path = args.checkpoint_start_from
     elif args.restore_from_checkpoint == 1:
-        restore_path = os.path.join(args.output_dir, '%s_with_model.pt' % args.checkpoint_name)
-    print(os.path.isfile(restore_path))
-    print(restore_path)
+        restore_path = os.path.join(f'{args.checkpoint_name}_with_model.pt')
+    
     if restore_path is not None and os.path.isfile(restore_path):
         logger.info(f'Restoring from checkpoint {restore_path}')
         checkpoint = torch.load(restore_path)
@@ -131,21 +148,16 @@ def main(args):
         discriminator.load_state_dict(checkpoint['d_state'])
         optimizer_g.load_state_dict(checkpoint['g_optim_state'])
         optimizer_d.load_state_dict(checkpoint['d_optim_state'])
-        t = checkpoint['counters']['t']
         epoch = checkpoint['counters']['epoch']
-        checkpoint['restore_ts'].append(t)
     else:
         # Starting from scratch, so initialize checkpoint data structure
-        t, epoch = 0, 0
+        epoch = 0
         checkpoint = {
             'args': args.__dict__,
             'G_losses': defaultdict(list),
             'D_losses': defaultdict(list),
-            'losses_ts': [],
             'metrics_val': defaultdict(list),
             'metrics_train': defaultdict(list),
-            'sample_ts': [],
-            'restore_ts': [],
             'norm_g': [],
             'norm_d': [],
             'counters': {
@@ -158,141 +170,150 @@ def main(args):
             'd_optim_state': None,
             'g_best_state': None,
             'd_best_state': None,
-            'best_t': None,
             'g_best_nl_state': None,
             'd_best_state_nl': None,
             'best_t_nl': None,
         }
-    t0 = None
-    while t < args.num_iterations:
-        gc.collect()
+    t_total = time.time()    
+    t0 = time.time()
+
+    global study_counter
+    if study_counter is None:
+        dirs = os.listdir('./runs')
+        study_counter = len(dirs)
+
+    global run_identifier
+    metrics_dir = os.path.join('runs', f'study_{study_counter}_{run_identifier}', f'trial_{trial.number}')
+    os.makedirs(metrics_dir)
+
+    train_metrics_pd = None    
+    train_metrics_path = os.path.join(metrics_dir, 'train_metrics.csv')
+
+    val_metrics_pd = None
+    val_metrics_path = os.path.join(metrics_dir, 'val_metrics.csv')
+
+    while epoch < args.num_epochs:
         d_steps_left = args.d_steps
-        g_steps_left = args.g_steps
-        epoch += 1
-        logger.info(f'Starting epoch {epoch}')
+        g_steps_left = args.g_steps       
+        logger.info(f'Starting epoch {epoch+1}')
         for batch in train_loader:
-            if args.timing == 1:
-                torch.cuda.synchronize()
-                t1 = time.time()
+            gc.collect()
 
             # Decide whether to use the batch for stepping on discriminator or
             # generator; an iteration consists of args.d_steps steps on the
             # discriminator followed by args.g_steps steps on the generator.
             if d_steps_left > 0:
                 step_type = 'd'
-                losses_d = discriminator_step(args, batch, generator,
-                                              discriminator, d_loss_fn,
-                                              optimizer_d, device)
-                checkpoint['norm_d'].append(
-                    get_total_norm(discriminator.parameters()))
+                losses_d = discriminator_step(args, batch, generator, discriminator, d_loss_fn, optimizer_d, device)
+                checkpoint['norm_d'].append(get_total_norm(discriminator.parameters()))
                 d_steps_left -= 1
             elif g_steps_left > 0:
                 step_type = 'g'
                 losses_g = generator_step(args, batch, generator, discriminator, g_loss_fn, optimizer_g, device)
                 checkpoint['norm_g'].append(get_total_norm(generator.parameters()))
                 g_steps_left -= 1
-            print('test1')
-            if args.timing == 1:
-                torch.cuda.synchronize()
-                t2 = time.time()
-                logger.info(f'{step_type} step took {t2 - t1}')
-            print('test2')
             # Skip the rest if we are not at the end of an iteration
             if d_steps_left > 0 or g_steps_left > 0:
                 continue
-            print('test3')
+
+        # Maybe save a checkpoint
+        if epoch % args.checkpoint_every == 0:
+            checkpoint['counters']['epoch'] = epoch
+
+            # Check stats on the validation set
+            metrics_val = check_accuracy(args, val_loader, generator, discriminator, d_loss_fn, device)
+            metrics_train = check_accuracy(args, train_loader, generator, discriminator, d_loss_fn, device, limit=True)
+
             if args.timing == 1:
-                if t0 is not None:
-                    logger.info(f'Interation {t - 1} took {time.time() - t0}')
+                cp_time = time.time() - t0
+                metrics_train['time'] = cp_time
+                metrics_val['time'] = cp_time
                 t0 = time.time()
-            print('test4')
-            # Maybe save loss
-            if t % args.print_every == 0:
-                logger.info(f't = {t + 1} / {args.num_iterations}')
-                for k, v in sorted(losses_d.items()):
-                    logger.info('  [D] {}: {:.3f}'.format(k, v))
-                    checkpoint['D_losses'][k].append(v)
-                for k, v in sorted(losses_g.items()):
-                    logger.info('  [G] {}: {:.3f}'.format(k, v))
-                    checkpoint['G_losses'][k].append(v)
-                checkpoint['losses_ts'].append(t)
-            print('test5')
-            # Maybe save a checkpoint
-            if t > 0 and t % args.checkpoint_every == 0:
-                checkpoint['counters']['t'] = t
-                checkpoint['counters']['epoch'] = epoch
-                checkpoint['sample_ts'].append(t)
+            metrics_train['epoch'] = epoch
+            metrics_val['epoch'] = epoch
 
-                # Check stats on the validation set
-                logger.info('Checking stats on val ...')
-                metrics_val = check_accuracy(args, val_loader, generator, discriminator, d_loss_fn, device)
-                logger.info('Checking stats on train ...')
-                metrics_train = check_accuracy(
-                    args, train_loader, generator, discriminator, d_loss_fn, device, limit=True
-                )
-                metrics_train['epoch'] = epoch
-                metrics_val['epoch'] = epoch
+            train_metrics_pd = pd.DataFrame([metrics_train], columns=metrics_train.keys())
+            if not os.path.isfile(train_metrics_path):
+                train_metrics_pd.to_csv(train_metrics_path, index=False)
+            else:
+                train_metrics_pd.to_csv(train_metrics_path, mode='a', header=False, index=False)
 
-                logger.info(f'Metrics train:\n{metrics_train}')
-                logger.info(f'Metrics val:\n{metrics_val}')
-                for k, v in sorted(metrics_val.items()):
-                    # logger.info('  [val] {}: {:.3f}'.format(k, v))
-                    checkpoint['metrics_val'][k].append(v)
-                for k, v in sorted(metrics_train.items()):
-                    # logger.info('  [train] {}: {:.3f}'.format(k, v))
-                    checkpoint['metrics_train'][k].append(v)
+            val_metrics_pd = pd.DataFrame([metrics_val], columns=metrics_val.keys())
+            if not os.path.isfile(val_metrics_path):
+                val_metrics_pd.to_csv(val_metrics_path, index=False)
+            else:
+                val_metrics_pd.to_csv(val_metrics_path, mode='a', header=False, index=False)
 
-                min_mad = min(checkpoint['metrics_val']['mad'])
-                min_mad_nl = min(checkpoint['metrics_val']['mad_nl'])
+            for k, v in sorted(metrics_val.items()):
+                # logger.info('  [val] {}: {:.3f}'.format(k, v))
+                checkpoint['metrics_val'][k].append(v)
+            for k, v in sorted(metrics_train.items()):
+                # logger.info('  [train] {}: {:.3f}'.format(k, v))
+                checkpoint['metrics_train'][k].append(v)
 
-                if metrics_val['mad'] == min_mad:
-                    logger.info('New low for avg_disp_error')
-                    checkpoint['best_t'] = t
-                    checkpoint['g_best_state'] = generator.state_dict()
-                    checkpoint['d_best_state'] = discriminator.state_dict()
+            min_mad = min(checkpoint['metrics_val']['mad'])
+            min_mad_nl = min(checkpoint['metrics_val']['mad_nl'])
 
-                if metrics_val['mad_nl'] == min_mad_nl:
-                    logger.info('New low for avg_disp_error_nl')
-                    checkpoint['best_t_nl'] = t
-                    checkpoint['g_best_nl_state'] = generator.state_dict()
-                    checkpoint['d_best_nl_state'] = discriminator.state_dict()
+            if metrics_val['mad'] == min_mad:
+                # logger.info('New low for avg_disp_error')
+                checkpoint['g_best_state'] = generator.state_dict()
+                checkpoint['d_best_state'] = discriminator.state_dict()
 
-                # Save another checkpoint with model weights and
-                # optimizer state
-                checkpoint['g_state'] = generator.state_dict()
-                checkpoint['g_optim_state'] = optimizer_g.state_dict()
-                checkpoint['d_state'] = discriminator.state_dict()
-                checkpoint['d_optim_state'] = optimizer_d.state_dict()
-                checkpoint_path = os.path.join(
-                    args.output_dir, f'{args.checkpoint_name}s_with_model.pt')
-                logger.info(f'Saving checkpoint to {checkpoint_path}')
-                torch.save(checkpoint, checkpoint_path)
-                logger.info('Done.')
+            if metrics_val['mad_nl'] == min_mad_nl:
+                # logger.info('New low for avg_disp_error_nl')
+                checkpoint['g_best_nl_state'] = generator.state_dict()
+                checkpoint['d_best_nl_state'] = discriminator.state_dict()
 
-                # Save a checkpoint with no model weights by making a shallow
-                # copy of the checkpoint excluding some items
-                checkpoint_path = os.path.join(
-                    args.output_dir, f'{args.checkpoint_name}s_no_model.pt')
-                logger.info(f'Saving checkpoint to {checkpoint_path}')
-                key_blacklist = [
-                    'g_state', 'd_state', 'g_best_state', 'g_best_nl_state',
-                    'g_optim_state', 'd_optim_state', 'd_best_state',
-                    'd_best_nl_state'
-                ]
-                small_checkpoint = {}
-                for k, v in checkpoint.items():
-                    if k not in key_blacklist:
-                        small_checkpoint[k] = v
-                torch.save(small_checkpoint, checkpoint_path)
-                logger.info('Done.')
-                print('test6')
-                print(torch.cuda.memory_allocated())
+            # Save another checkpoint with model weights and
+            # optimizer state
+            checkpoint['g_state'] = generator.state_dict()
+            checkpoint['g_optim_state'] = optimizer_g.state_dict()
+            checkpoint['d_state'] = discriminator.state_dict()
+            checkpoint['d_optim_state'] = optimizer_d.state_dict()
+            checkpoint_path = os.path.join(args.output_dir, f'{args.checkpoint_name}_with_model.pt')
+            torch.save(checkpoint, checkpoint_path)
 
-            t += 1
-            d_steps_left = args.d_steps
-            g_steps_left = args.g_steps
-            if t >= args.num_iterations:
-                break
+            # Save a checkpoint with no model weights by making a shallow
+            # copy of the checkpoint excluding some items
+            checkpoint_path = os.path.join(args.output_dir, f'{args.checkpoint_name}_no_model.pt')
+            key_blacklist = [
+                'g_state', 'd_state', 'g_best_state', 'g_best_nl_state', 'g_optim_state', 'd_optim_state',
+                'd_best_state', 'd_best_nl_state'
+            ]
+            small_checkpoint = {}
+            for k, v in checkpoint.items():
+                if k not in key_blacklist:
+                    small_checkpoint[k] = v
+            torch.save(small_checkpoint, checkpoint_path)
+
+            # Handle pruning based on the intermediate value.
+            trial.report(metrics_train["mad"], epoch)
+            if trial.should_prune():
+                raise optuna.exceptions.TrialPruned()
+            # t_mem = torch.cuda.get_device_properties(0).total_memory
+            # r_mem = torch.cuda.memory_reserved(0)
+            # a_mem = torch.cuda.memory_allocated(0)
+            # f_mem = r-a  # free inside reserved
+            # print(f'Total memory: {t_mem}')
+            # print(f'Reserved memory: {r_mem}')
+            # print(f'Reserved/Total: {r_mem/t_mem:.1f} %')
+            # print(f'Allocated/Total: {a_mem/t_mem:.1f} %')
+            # print(f'Allocated/Reserved: {a_mem/t_mem:.1f} %')
+
+        if args.print:
+            logger.info(f'Epoch {epoch} took {metrics_train["time"]:.2f}s')
+            logger.info(f'Train: mad = {metrics_train["mad"]:.3f}  fad = {metrics_train["fad"]:.3f}')
+            logger.info(f'Val: mad = {metrics_val["mad"]:.3f}  fad = {metrics_val["fad"]:.3f}')
+            for k, v in sorted(losses_d.items()):
+                logger.info('  [D] {}: {:.3f}'.format(k, v))
+                checkpoint['D_losses'][k].append(v)
+            for k, v in sorted(losses_g.items()):
+                logger.info('  [G] {}: {:.3f}'.format(k, v))
+                checkpoint['G_losses'][k].append(v)
+
+        epoch += 1
+    logger.info(f'Total training time: {time.time() - t_total}')
+    return min_mad
 
 
 def discriminator_step(args, batch, generator, discriminator, d_loss_fn, optimizer_d, device):
@@ -332,8 +353,7 @@ def discriminator_step(args, batch, generator, discriminator, d_loss_fn, optimiz
     optimizer_d.zero_grad()
     loss.backward()
     if args.clipping_threshold_d > 0:
-        nn.utils.clip_grad_norm_(discriminator.parameters(),
-                                 args.clipping_threshold_d)
+        nn.utils.clip_grad_norm_(discriminator.parameters(), args.clipping_threshold_d)
     optimizer_d.step()
 
     return losses
@@ -349,17 +369,15 @@ def generator_step(args, batch, generator, discriminator, g_loss_fn, optimizer_g
 
     loss_mask = loss_mask[:, args.obs_len:]
 
+    # TODO: expand for feature_count later
+    target = pred_traj_gt_rel.permute(1, 0, 2)[:, :-1, :]
+    target_c = torch.zeros((target.shape[0], target.shape[1], 1)).to(device)
+    target = torch.cat((target, target_c), -1)
+    start_of_seq = torch.Tensor([0, 0, 1]).unsqueeze(0).unsqueeze(1).repeat(target.shape[0], 1, 1).to(device)
+    dec_inp = torch.cat((start_of_seq, target), 1)
+    trg_att = subsequent_mask(dec_inp.shape[1]).repeat(dec_inp.shape[0], 1, 1).to(device)
     for _ in range(args.best_k):
-        # TODO: expand for feature_count later
-        target = pred_traj_gt_rel.permute(1, 0, 2)[:, :-1, :]
-        target_c = torch.zeros((target.shape[0], target.shape[1], 1)).to(device)
-        target = torch.cat((target, target_c), -1)
-        start_of_seq = torch.Tensor([0, 0, 1]).unsqueeze(0).unsqueeze(1).repeat(target.shape[0], 1, 1).to(device)
-        dec_inp = torch.cat((start_of_seq, target), 1)
-        trg_att = subsequent_mask(dec_inp.shape[1]).repeat(dec_inp.shape[0], 1, 1).to(device)
-
         generator_out = generator(obs_traj, obs_traj_rel, seq_start_end, dec_inp, trg_att)
-        # generator_out = generator(obs_traj, obs_traj_rel, seq_start_end)
 
         pred_traj_fake_rel = generator_out
         pred_traj_fake = relative_to_abs(pred_traj_fake_rel, obs_traj[-1])
@@ -436,13 +454,9 @@ def check_accuracy(args, loader, generator, discriminator, d_loss_fn, device, li
                 pred_traj_gt, pred_traj_gt_rel, pred_traj_fake,
                 pred_traj_fake_rel, loss_mask
             )
-            mad, mad_l, mad_nl = cal_mad(
-                pred_traj_gt, pred_traj_fake, linear_ped, non_linear_ped
-            )
+            mad, mad_l, mad_nl = cal_mad(pred_traj_gt, pred_traj_fake, linear_ped, non_linear_ped)
 
-            fad, fad_l, fad_nl = cal_fad(
-                pred_traj_gt, pred_traj_fake, linear_ped, non_linear_ped
-            )
+            fad, fad_l, fad_nl = cal_fad(pred_traj_gt, pred_traj_fake, linear_ped, non_linear_ped)
 
             traj_real = torch.cat([obs_traj, pred_traj_gt], dim=0)
             traj_real_rel = torch.cat([obs_traj_rel, pred_traj_gt_rel], dim=0)
@@ -516,5 +530,21 @@ def cal_fad(pred_traj_gt, pred_traj_fake, linear_ped, non_linear_ped):
 
 
 if __name__ == '__main__':
-    args = ap.parse_args()
-    main(args)
+    study = optuna.create_study()
+    study.optimize(objective, n_trials=40)
+
+    pruned_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED]
+    complete_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+
+    print("Study statistics: ")
+    print("  Number of finished trials: ", len(study.trials))
+    print("  Number of pruned trials: ", len(pruned_trials))
+    print("  Number of complete trials: ", len(complete_trials))
+
+    print("Best trial:")
+    trial = study.best_trial
+    print("  Value: ", trial.value)
+
+    print("  Params: ")
+    for key, value in trial.params.items():
+        print("    {}: {}".format(key, value))

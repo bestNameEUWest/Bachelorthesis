@@ -167,11 +167,11 @@ class TrajectoryGenerator(nn.Module):
         final_encoder_h = final_encoder_h.permute(1, 0, 2)
 
         # Predict Trajectory
+
         pred_traj_fake_rel = self.decoder(
             final_encoder_h,
             src_att,
             dec_inp,
             trg_att,
         )
-        # exit()
         return pred_traj_fake_rel

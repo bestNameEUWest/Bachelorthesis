@@ -14,11 +14,10 @@ def data_loader(args, path):
         skip=args.skip,
         delim=args.delim)
 
-    logger.info('DISABLED SHUFFLE IN LOADER.PY')    
     loader = DataLoader(
         dset,
         batch_size=args.batch_size,
-        #shuffle=True,
+        shuffle=True,
         num_workers=args.loader_num_workers,
         collate_fn=seq_collate)
     return dset, loader

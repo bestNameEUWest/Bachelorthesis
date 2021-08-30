@@ -7,22 +7,25 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     # Dataset options
+    parser.add_argument('--dataset_folder', default='datasets', type=str)
     parser.add_argument('--dataset_name', default='zara1', type=str)
+    parser.add_argument('--raw_dataset_folder', default='raw_data', type=str)
     parser.add_argument('--delim', default='\t')
     parser.add_argument('--loader_num_workers', default=2, type=int)
     parser.add_argument('--obs_len', default=8, type=int)
     parser.add_argument('--pred_len', default=8, type=int)
     parser.add_argument('--skip', default=1, type=int)
+    parser.add_argument('--step', default=10, type=int)
 
     # Optimization
     parser.add_argument('--batch_size', default=64, type=int)
-    parser.add_argument('--num_iterations', default=10000, type=int)
     parser.add_argument('--num_epochs', default=200, type=int)
 
     # Model Options
     parser.add_argument('--pool_emb_dim', default=64, type=int)
     parser.add_argument('--tf_emb_dim', default=512, type=int)
     parser.add_argument('--tf_ff_size', default=2048, type=int)
+    parser.add_argument('--heads', default=8, type=int)
     parser.add_argument('--layer_count', default=6, type=int)
     parser.add_argument('--dropout', default=0, type=float)
     parser.add_argument('--batch_norm', default=0, type=bool_flag)
@@ -52,8 +55,8 @@ def parse_args():
 
     # Output
     parser.add_argument('--output_dir', default=os.getcwd())
-    parser.add_argument('--print_every', default=5, type=int)
-    parser.add_argument('--checkpoint_every', default=100, type=int)
+    parser.add_argument('--print', action='store_true')
+    parser.add_argument('--checkpoint_every', default=10, type=int)
     parser.add_argument('--checkpoint_name', default='checkpoint')
     parser.add_argument('--checkpoint_start_from', default=None)
     parser.add_argument('--restore_from_checkpoint', default=0, type=int)

@@ -1,6 +1,8 @@
 import torch
 import random
 
+from sgan.models.Utils import log
+
 
 def bce_loss(input, target):
     """
@@ -61,8 +63,8 @@ def l2_loss(pred_traj, pred_traj_gt, loss_mask, random=0, mode='average'):
     - loss: l2 loss depending on mode
     """
     seq_len, batch, _ = pred_traj.size()
-    loss = (loss_mask.unsqueeze(dim=2) *
-            (pred_traj_gt.permute(1, 0, 2) - pred_traj.permute(1, 0, 2))**2)
+    loss = (loss_mask.unsqueeze(dim=2) * (pred_traj_gt.permute(1, 0, 2) - pred_traj.permute(1, 0, 2))**2)
+
     if mode == 'sum':
         return torch.sum(loss)
     elif mode == 'average':

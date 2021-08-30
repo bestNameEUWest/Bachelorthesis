@@ -10,11 +10,12 @@ tmp.sh
 rename.py
 __pycache__/**
 logs/
-./models/
+./models/*
 pytorch_data_save/
 runs/
 scripts/__pycache__/*
 scripts/modules/__pycache__/*
+sgan/models/__pycache__/*
 sgan/__pycache__/*
 sgan/data/__pycache__/*
 .idea/*
