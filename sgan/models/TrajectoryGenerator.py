@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 
-from sgan.models.SGANEncoder import SGANEncoder
-from sgan.models.SGANDecoder import SGANDecoder
+from sgan.models.STFEncoder import STFEncoder
+from sgan.models.STFDecoder import STFDecoder
 from sgan.models.Pooling import PoolHiddenNet
 
 from sgan.models.Utils import make_mlp, get_noise, log
@@ -30,7 +30,7 @@ class TrajectoryGenerator(nn.Module):
 
         self.test = nn.Linear(pool_emb_dim + tf_emb_dim, tf_emb_dim)
 
-        self.encoder = SGANEncoder(
+        self.encoder = STFEncoder(
             device=device,
             feature_count=feature_count,
             layer_count=layer_count,
@@ -39,7 +39,7 @@ class TrajectoryGenerator(nn.Module):
             heads=heads,
             dropout=dropout
         )
-        self.decoder = SGANDecoder(
+        self.decoder = STFDecoder(
             dec_inp_size=dec_inp_size,
             dec_out_size=dec_out_size,
             layer_count=layer_count,

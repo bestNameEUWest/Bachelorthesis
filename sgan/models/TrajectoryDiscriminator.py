@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from sgan.models.SGANEncoder import SGANEncoder
+from sgan.models.STFEncoder import STFEncoder
 from sgan.models.Pooling import PoolHiddenNet
 from sgan.models.Utils import make_mlp, log
 
@@ -16,7 +16,7 @@ class TrajectoryDiscriminator(nn.Module):
         self.d_type = d_type
 
         # log('Trajectory d sgan enc h_dim size', h_dim)
-        self.encoder = SGANEncoder(
+        self.encoder = STFEncoder(
             device=device,
             feature_count=feature_count,
             layer_count=layer_count,

@@ -4,11 +4,11 @@ from sgan.models.transformer.custom_transformer import TransformerDecoder
 from sgan.models.Utils import log
 
 
-class SGANDecoder(nn.Module):
+class STFDecoder(nn.Module):
     """Decoder is part of TrajectoryGenerator"""
     def __init__(self, dec_inp_size=3, dec_out_size=3, layer_count=6, emb_size=512, ff_size=2048, heads=8,
                  dropout=0.1):
-        super(SGANDecoder, self).__init__()
+        super(STFDecoder, self).__init__()
         self.tf_decoder = TransformerDecoder(
             dec_inp_size=dec_inp_size,
             dec_out_size=dec_out_size,

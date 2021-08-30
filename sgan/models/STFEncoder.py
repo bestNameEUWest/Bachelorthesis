@@ -5,11 +5,11 @@ from sgan.models.transformer.custom_transformer import TransformerEncoder
 from sgan.models.Utils import log
 
 
-class SGANEncoder(nn.Module):
+class STFEncoder(nn.Module):
     """Encoder is part of both TrajectoryGenerator and
     TrajectoryDiscriminator"""
     def __init__(self, device, feature_count, layer_count=6, emb_size=512, ff_size=2048, heads=8, dropout=0.1):
-        super(SGANEncoder, self).__init__()
+        super(STFEncoder, self).__init__()
         self.device = device
         self.tf_encoder = TransformerEncoder(
             enc_inp_size=feature_count,
