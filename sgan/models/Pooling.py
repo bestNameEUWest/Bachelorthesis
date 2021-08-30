@@ -12,11 +12,11 @@ class PoolHiddenNet(nn.Module):
     ):
         super(PoolHiddenNet, self).__init__()
 
-        self.mlp_dim = mlp_dim
-        self.bottleneck_dim = bottleneck_dim
-
-        mlp_pre_dim = pool_emb_dim + tf_emb_dim
-        mlp_pre_pool_dims = [mlp_pre_dim, 512, bottleneck_dim]
+        # Linear Transformation:
+        #   TF embedding dim + pooling embedding dim
+        #   -> pooling mlp size
+        #   -> output dimension
+        mlp_pre_pool_dims = [tf_emb_dim + pool_emb_dim, mlp_dim, bottleneck_dim]
 
         self.spatial_embedding = nn.Linear(2, pool_emb_dim)
         self.mlp_pre_pool = make_mlp(

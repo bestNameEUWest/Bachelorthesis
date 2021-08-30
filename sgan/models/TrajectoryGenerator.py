@@ -19,14 +19,12 @@ class TrajectoryGenerator(nn.Module):
 
         if pooling_type and pooling_type.lower() == 'none':
             pooling_type = None
-        self.tmp = pool_emb_dim + tf_emb_dim
         self.device = device
         self.noise_dim = noise_dim
         self.noise_type = noise_type
         self.noise_mix_type = noise_mix_type
         self.pooling_type = pooling_type
         self.noise_first_dim = 0
-        self.bottleneck_dim = bottleneck_dim
 
         self.test = nn.Linear(pool_emb_dim + tf_emb_dim, tf_emb_dim)
 
