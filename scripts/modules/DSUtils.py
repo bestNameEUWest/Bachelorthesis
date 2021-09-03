@@ -63,6 +63,7 @@ def dataset_loader(args):
         else:
             logger.info(f'Prepared {args.dataset_name} {labels[i]} data not found')
             logger.info('Preparing data...')
+            _, loaders[i] = data_loader(args, paths[i])
             save_dir_path = os.path.join(pytorch_data_save_dir, args.dataset_name, save_dir_name)
             try:
                 os.makedirs(save_dir_path)

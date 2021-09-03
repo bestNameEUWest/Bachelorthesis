@@ -21,14 +21,13 @@ python -m scripts.train \
   --timing 1 \
   --raw_dataset_folder raw_data \
   --step 5 \
-
-#  --tf_emb_dim 256 \
-#  --tf_ff_size 1024 \
-#  --pool_emb_dim 256 \
-#  --bottleneck_dim 128 \
-#  --mlp_dim 64\
-#  --noise_dim 8 \
-#  --layer_count 4 \
-#  --g_learning_rate 1e-3 \
-#  --d_learning_rate 1e-3 \
-#  --heads 8
+  --tf_emb_dim 256 \
+  --tf_ff_size 1024 \
+  --pool_emb_dim 256 \
+  --bottleneck_dim 128 \
+  --mlp_dim 512\
+  --noise_dim 32 \
+  --layer_count 4 \
+  --g_learning_rate 1e-3 \
+  --d_learning_rate 1e-3 \
+  --heads 8

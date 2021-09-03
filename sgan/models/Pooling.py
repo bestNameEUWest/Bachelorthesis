@@ -182,9 +182,7 @@ class SocialPooling(nn.Module):
             # dump all uncessary adds.
             grid_pos += 1
             total_grid_size = self.grid_size * self.grid_size
-            offset = torch.arange(
-                0, total_grid_size * num_ped, total_grid_size
-            ).type_as(seq_start_end)
+            offset = torch.arange(0, total_grid_size * num_ped, total_grid_size).type_as(seq_start_end)
 
             offset = self.repeat(offset.view(-1, 1), num_ped).view(-1)
             grid_pos += offset

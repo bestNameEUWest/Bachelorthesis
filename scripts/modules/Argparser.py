@@ -18,6 +18,7 @@ def parse_args():
     parser.add_argument('--step', default=10, type=int)
 
     # Optimization
+    parser.add_argument('--optuna', action='store_true')
     parser.add_argument('--batch_size', default=64, type=int)
     parser.add_argument('--num_epochs', default=200, type=int)
 

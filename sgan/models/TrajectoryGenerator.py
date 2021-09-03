@@ -1,9 +1,10 @@
 import torch
 import torch.nn as nn
 
-from sgan.models.STFEncoder import STFEncoder
-from sgan.models.STFDecoder import STFDecoder
 from sgan.models.Pooling import PoolHiddenNet
+from sgan.models.transformer.batch import subsequent_mask
+from sgan.models.transformer.custom_transformer import TransformerEncoder, TransformerDecoder
+
 
 from sgan.models.Utils import make_mlp, get_noise, log
 
@@ -11,7 +12,7 @@ from sgan.models.Utils import make_mlp, get_noise, log
 class TrajectoryGenerator(nn.Module):
     def __init__(
             self, device, feature_count=2, pool_emb_dim=64, tf_emb_dim=64, tf_ff_size=2048, dec_inp_size=3,
-            dec_out_size=3, mlp_dim=1024, layer_count=1, noise_dim=(0,),
+            dec_out_size=3, mlp_dim=1024, layer_count=1, noise_dim=(0,), pred_len=12,
             noise_type='gaussian', noise_mix_type='ped', pooling_type=None,
             dropout=0.0, heads=8, bottleneck_dim=1024, activation='relu', batch_norm=True,
     ):
@@ -21,27 +22,28 @@ class TrajectoryGenerator(nn.Module):
             pooling_type = None
         self.device = device
         self.noise_dim = noise_dim
+        self.pred_len = pred_len
         self.noise_type = noise_type
         self.noise_mix_type = noise_mix_type
         self.pooling_type = pooling_type
         self.noise_first_dim = 0
 
-        self.encoder = STFEncoder(
-            device=device,
-            feature_count=feature_count,
-            layer_count=layer_count,
-            emb_size=tf_emb_dim,
-            ff_size=tf_ff_size,
-            heads=heads,
+        self.encoder = TransformerEncoder(
+            enc_inp_size=feature_count,
+            n=layer_count,
+            d_model=tf_emb_dim,
+            d_ff=tf_ff_size,
+            h=heads,
             dropout=dropout
         )
-        self.decoder = STFDecoder(
+
+        self.decoder = TransformerDecoder(
             dec_inp_size=dec_inp_size,
             dec_out_size=dec_out_size,
-            layer_count=layer_count,
-            emb_size=tf_emb_dim,
-            ff_size=tf_ff_size,
-            heads=heads,
+            n=layer_count,
+            d_model=tf_emb_dim,
+            d_ff=tf_ff_size,
+            h=heads,
             dropout=dropout
         )
 
@@ -126,7 +128,7 @@ class TrajectoryGenerator(nn.Module):
         else:
             return False
 
-    def forward(self, obs_traj, obs_traj_rel, seq_start_end, dec_inp, trg_att, user_noise=None):
+    def forward(self, obs_traj, obs_traj_rel, pred_traj_gt_rel, seq_start_end, predict, mean, std, user_noise=None):
         """
         Inputs:
         - obs_traj: Tensor of shape (obs_len, batch, 2)
@@ -138,14 +140,25 @@ class TrajectoryGenerator(nn.Module):
         - pred_traj_rel: Tensor of shape (self.pred_len, batch, 2)
         """
 
-        inp = obs_traj_rel.permute(1, 0, 2)[:, 1:, :].to(self.device)
+        inp = (obs_traj_rel.permute(1, 0, 2)[:, 1:, :].to(self.device) - mean) / std
         src_att = torch.ones((inp.shape[0], 1, inp.shape[1])).to(self.device)
+
+        target = (pred_traj_gt_rel.permute(1, 0, 2)[:, :-1, :] - mean) / std
+        target_c = torch.zeros((target.shape[0], target.shape[1], 1)).to(self.device)
+        target = torch.cat((target, target_c), -1)
+        start_of_seq = torch.Tensor([0, 0, 1]).unsqueeze(0).unsqueeze(1).repeat(target.shape[0], 1, 1).to(self.device)
+        if predict:
+            dec_inp = start_of_seq
+        else:
+            dec_inp = torch.cat((start_of_seq, target), 1)
+        trg_att = subsequent_mask(dec_inp.shape[1]).repeat(dec_inp.shape[0], 1, 1).to(self.device)
+
         final_encoder_h = self.encoder(inp, src_att)
         final_encoder_h = final_encoder_h.permute(1, 0, 2)
 
         # Pool States
         if self.pooling_type:
-            end_pos = obs_traj[1:, :, :]
+            end_pos = (obs_traj[1:, :, :] - mean) / std
             pool_h = self.pool_net(final_encoder_h, seq_start_end, end_pos)
             # Construct input hidden states for decoder
             mlp_decoder_context_input = torch.cat([final_encoder_h, pool_h], dim=2)
@@ -164,10 +177,23 @@ class TrajectoryGenerator(nn.Module):
 
         # Predict Trajectory
 
-        pred_traj_fake_rel = self.decoder(
-            final_encoder_h,
-            src_att,
-            dec_inp,
-            trg_att,
-        )
-        return pred_traj_fake_rel
+        if predict:
+            for i in range(self.pred_len):
+                trg_att = subsequent_mask(dec_inp.shape[1]).repeat(dec_inp.shape[0], 1, 1).to(self.device)
+                pred_traj_fake_rel = self.decoder(
+                    final_encoder_h,
+                    src_att,
+                    dec_inp,
+                    trg_att,
+                )
+                dec_inp = torch.cat((dec_inp, pred_traj_fake_rel[:, -1:, :]), 1)
+            pred_traj_fake_rel = dec_inp[:, 1:, :]
+        else:
+            pred_traj_fake_rel = self.decoder(
+                final_encoder_h,
+                src_att,
+                dec_inp,
+                trg_att,
+            )
+
+        return pred_traj_fake_rel[:, :, 0:2].permute(1, 0, 2) * std + mean

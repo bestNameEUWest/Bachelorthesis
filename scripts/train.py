@@ -23,9 +23,8 @@ from sgan.losses import displacement_error, final_displacement_error
 from sgan.models.TrajectoryGenerator import TrajectoryGenerator
 from sgan.models.TrajectoryDiscriminator import TrajectoryDiscriminator
 
-from scripts.modules.Utils import get_total_norm, relative_to_abs, get_dset_path, int_tuple
+from scripts.modules.Utils import get_total_norm, relative_to_abs, get_dset_path
 from sgan.models.Utils import log
-from sgan.models.transformer.batch import subsequent_mask
 
 torch.backends.cudnn.benchmark = True
 
@@ -60,19 +59,17 @@ def objective(trial):
         device = torch.device("cpu")
 
     # Define hyperparams
-    args.tf_emb_dim = 2 ** trial.suggest_int("tf_emb_dim_exp", 6, 8)  # 64 - 256
-    args.tf_ff_size = 2 ** trial.suggest_int("tf_ff_size_exp", 4, 10)  # 32 - 1024
-    args.pool_emb_dim = 2 ** trial.suggest_int("pool_emb_dim_exp", 4, 8)  # 32 - 256
-    args.bottleneck_dim = 2 ** trial.suggest_int("bottleneck_dim_exp", 3, 7)  # 16 - 128
-    args.mlp_dim = 2 ** trial.suggest_int("mlp_dim_exp", 3, 6)  # 16 - 64
-    args.noise_dim = (2 ** trial.suggest_int("noise_dim_exp", 2, 5),)  # 4 - 32
-    args.layer_count = trial.suggest_int("layer_count", 1, 6)
-    args.g_learning_rate = trial.suggest_float("g_learning_rate", 1e-5, 1e-2, log=True)
-    args.d_learning_rate = trial.suggest_float("d_learning_rate", 1e-5, 1e-2, log=True)
-    args.heads = 2 ** trial.suggest_int("heads_exp", 1, 3)  # 2 - 8
-
-    print(trial.params)
-
+    if args.optuna:
+        args.tf_emb_dim = 2 ** trial.suggest_int("tf_emb_dim_exp", 6, 8)  # 64 - 256
+        args.tf_ff_size = 2 ** trial.suggest_int("tf_ff_size_exp", 4, 10)  # 32 - 1024
+        args.pool_emb_dim = 2 ** trial.suggest_int("pool_emb_dim_exp", 4, 8)  # 32 - 256
+        args.bottleneck_dim = 2 ** trial.suggest_int("bottleneck_dim_exp", 3, 7)  # 16 - 128
+        args.mlp_dim = 2 ** trial.suggest_int("mlp_dim_exp", 3, 6)  # 16 - 64
+        args.noise_dim = (2 ** trial.suggest_int("noise_dim_exp", 2, 5),)  # 4 - 32
+        args.layer_count = trial.suggest_int("layer_count", 1, 4)
+        args.g_learning_rate = trial.suggest_float("g_learning_rate", 1e-5, 1e-2, log=True)
+        args.d_learning_rate = trial.suggest_float("d_learning_rate", 1e-5, 1e-2, log=True)
+        args.heads = 2 ** trial.suggest_int("heads_exp", 1, 3)  # 2 - 8
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_num
     args.train_path = get_dset_path(args.dataset_name, 'train')
@@ -84,12 +81,6 @@ def objective(trial):
     logger.info("Initializing train dataset")
     [train_loader, val_loader, test_loader] = dsu.dataset_loader(args)
 
-    iterations_per_epoch = len(train_loader) / args.d_steps
-
-    logger.info(
-        f'There are {iterations_per_epoch} iterations per epoch'
-    )
-
     generator = TrajectoryGenerator(
         device=device,
         pool_emb_dim=args.pool_emb_dim,
@@ -97,6 +88,7 @@ def objective(trial):
         mlp_dim=args.mlp_dim,
         noise_dim=args.noise_dim,
         noise_type=args.noise_type,
+        pred_len=args.pred_len,
         noise_mix_type=args.noise_mix_type,
         pooling_type=args.pooling_type,
         dropout=args.dropout,
@@ -110,8 +102,6 @@ def objective(trial):
     generator.apply(init_weights)
     generator.type(float_dtype).train()
     torch.autograd.set_detect_anomaly(True)
-    # logger.info('Here is the generator:')
-    # logger.info(generator)
 
     discriminator = TrajectoryDiscriminator(
         device=device,
@@ -125,8 +115,6 @@ def objective(trial):
 
     discriminator.apply(init_weights)
     discriminator.type(float_dtype).train()
-    # logger.info('Here is the discriminator:')
-    # logger.info(discriminator)
 
     g_loss_fn = gan_g_loss
     d_loss_fn = gan_d_loss
@@ -140,7 +128,7 @@ def objective(trial):
         restore_path = args.checkpoint_start_from
     elif args.restore_from_checkpoint == 1:
         restore_path = os.path.join(f'{args.checkpoint_name}_with_model.pt')
-    
+
     if restore_path is not None and os.path.isfile(restore_path):
         logger.info(f'Restoring from checkpoint {restore_path}')
         checkpoint = torch.load(restore_path)
@@ -174,7 +162,26 @@ def objective(trial):
             'd_best_state_nl': None,
             'best_t_nl': None,
         }
-    t_total = time.time()    
+
+    generator_params = count_parameters(generator)
+    discriminator_params = count_parameters(discriminator)
+
+    hyperparams = {
+        "tf_emb_dim": args.tf_emb_dim,
+        "tf_ff_size": args.tf_ff_size,
+        "pool_emb_dim": args.pool_emb_dim,
+        "bottleneck_dim": args.bottleneck_dim,
+        "mlp_dim": args.mlp_dim,
+        "noise_dim": args.noise_dim,
+        "layer_count": args.layer_count,
+        "g_learning_rate": args.g_learning_rate,
+        "d_learning_rate": args.d_learning_rate,
+        "heads": args.heads,
+        "g_param_count": generator_params,
+        "d_param_count": discriminator_params
+    }
+
+    t_total = time.time()
     t0 = time.time()
 
     global study_counter
@@ -186,7 +193,9 @@ def objective(trial):
     metrics_dir = os.path.join('runs', f'study_{study_counter}_{run_identifier}', f'trial_{trial.number}')
     os.makedirs(metrics_dir)
 
-    train_metrics_pd = None    
+    pd.DataFrame.from_dict(hyperparams).to_csv(os.path.join(metrics_dir, 'h_params.csv'), index=False)
+
+    train_metrics_pd = None
     train_metrics_path = os.path.join(metrics_dir, 'train_metrics.csv')
 
     val_metrics_pd = None
@@ -194,7 +203,7 @@ def objective(trial):
 
     while epoch < args.num_epochs:
         d_steps_left = args.d_steps
-        g_steps_left = args.g_steps       
+        g_steps_left = args.g_steps
         logger.info(f'Starting epoch {epoch+1}')
         for batch in train_loader:
             gc.collect()
@@ -221,8 +230,8 @@ def objective(trial):
             checkpoint['counters']['epoch'] = epoch
 
             # Check stats on the validation set
-            metrics_val = check_accuracy(args, val_loader, generator, discriminator, d_loss_fn, device)
             metrics_train = check_accuracy(args, train_loader, generator, discriminator, d_loss_fn, device, limit=True)
+            metrics_val = check_accuracy(args, val_loader, generator, discriminator, d_loss_fn, device, predict=True)
 
             if args.timing == 1:
                 cp_time = time.time() - t0
@@ -271,7 +280,7 @@ def objective(trial):
             checkpoint['d_state'] = discriminator.state_dict()
             checkpoint['d_optim_state'] = optimizer_d.state_dict()
             checkpoint_path = os.path.join(args.output_dir, f'{args.checkpoint_name}_with_model.pt')
-            torch.save(checkpoint, checkpoint_path)
+            # torch.save(checkpoint, checkpoint_path)
 
             # Save a checkpoint with no model weights by making a shallow
             # copy of the checkpoint excluding some items
@@ -313,27 +322,20 @@ def objective(trial):
 
         epoch += 1
     logger.info(f'Total training time: {time.time() - t_total}')
+    if not args.optuna:
+        exit()
+
     return min_mad
 
 
 def discriminator_step(args, batch, generator, discriminator, d_loss_fn, optimizer_d, device):
     batch = [tensor.to(device) for tensor in batch]
     (obs_traj, pred_traj_gt, obs_traj_rel, pred_traj_gt_rel, non_linear_ped,
-     loss_mask, seq_start_end) = batch
+     loss_mask, seq_start_end, mean_rel, std_rel) = batch
     losses = {}
     loss = torch.zeros(1).to(pred_traj_gt)
 
-    # TODO: expand for feature_count later
-    target = pred_traj_gt_rel.permute(1, 0, 2)[:, :-1, :]
-    target_c = torch.zeros((target.shape[0], target.shape[1], 1)).to(device)
-    target = torch.cat((target, target_c), -1)
-    start_of_seq = torch.Tensor([0, 0, 1]).unsqueeze(0).unsqueeze(1).repeat(target.shape[0], 1, 1).to(device)
-    dec_inp = torch.cat((start_of_seq, target), 1)
-    trg_att = subsequent_mask(dec_inp.shape[1]).repeat(dec_inp.shape[0], 1, 1).to(device)
-
-    generator_out = generator(obs_traj, obs_traj_rel, seq_start_end, dec_inp, trg_att)
-
-    pred_traj_fake_rel = generator_out
+    pred_traj_fake_rel = generator(obs_traj, obs_traj_rel, pred_traj_gt_rel, seq_start_end, False, mean_rel, std_rel)
     pred_traj_fake = relative_to_abs(pred_traj_fake_rel, obs_traj[-1])
 
     traj_real = torch.cat([obs_traj, pred_traj_gt], dim=0)
@@ -341,8 +343,8 @@ def discriminator_step(args, batch, generator, discriminator, d_loss_fn, optimiz
     traj_fake = torch.cat([obs_traj, pred_traj_fake], dim=0)
     traj_fake_rel = torch.cat([obs_traj_rel, pred_traj_fake_rel], dim=0)
 
-    scores_fake = discriminator(traj_fake, traj_fake_rel, seq_start_end)
-    scores_real = discriminator(traj_real, traj_real_rel, seq_start_end)
+    scores_fake = discriminator(traj_fake, traj_fake_rel, mean_rel, std_rel, seq_start_end)
+    scores_real = discriminator(traj_real, traj_real_rel, mean_rel, std_rel, seq_start_end)
 
     # Compute loss with optional gradient penalty
     data_loss = d_loss_fn(scores_real, scores_fake)
@@ -362,24 +364,15 @@ def discriminator_step(args, batch, generator, discriminator, d_loss_fn, optimiz
 def generator_step(args, batch, generator, discriminator, g_loss_fn, optimizer_g, device):
     batch = [tensor.to(device) for tensor in batch]
     (obs_traj, pred_traj_gt, obs_traj_rel, pred_traj_gt_rel, non_linear_ped,
-     loss_mask, seq_start_end) = batch
+     loss_mask, seq_start_end, mean_rel, std_rel) = batch
     losses = {}
     loss = torch.zeros(1).to(pred_traj_gt)
     g_l2_loss_rel = []
 
     loss_mask = loss_mask[:, args.obs_len:]
 
-    # TODO: expand for feature_count later
-    target = pred_traj_gt_rel.permute(1, 0, 2)[:, :-1, :]
-    target_c = torch.zeros((target.shape[0], target.shape[1], 1)).to(device)
-    target = torch.cat((target, target_c), -1)
-    start_of_seq = torch.Tensor([0, 0, 1]).unsqueeze(0).unsqueeze(1).repeat(target.shape[0], 1, 1).to(device)
-    dec_inp = torch.cat((start_of_seq, target), 1)
-    trg_att = subsequent_mask(dec_inp.shape[1]).repeat(dec_inp.shape[0], 1, 1).to(device)
     for _ in range(args.best_k):
-        generator_out = generator(obs_traj, obs_traj_rel, seq_start_end, dec_inp, trg_att)
-
-        pred_traj_fake_rel = generator_out
+        pred_traj_fake_rel = generator(obs_traj, obs_traj_rel, pred_traj_gt_rel, seq_start_end, False, mean_rel, std_rel)
         pred_traj_fake = relative_to_abs(pred_traj_fake_rel, obs_traj[-1])
 
         if args.l2_loss_weight > 0:
@@ -404,7 +397,7 @@ def generator_step(args, batch, generator, discriminator, g_loss_fn, optimizer_g
     traj_fake = torch.cat([obs_traj, pred_traj_fake], dim=0)
     traj_fake_rel = torch.cat([obs_traj_rel, pred_traj_fake_rel], dim=0)
 
-    scores_fake = discriminator(traj_fake, traj_fake_rel, seq_start_end)
+    scores_fake = discriminator(traj_fake, traj_fake_rel, mean_rel, std_rel, seq_start_end)
     discriminator_loss = g_loss_fn(scores_fake)
 
     loss += discriminator_loss
@@ -414,20 +407,22 @@ def generator_step(args, batch, generator, discriminator, g_loss_fn, optimizer_g
     optimizer_g.zero_grad()
     loss.backward()
     if args.clipping_threshold_g > 0:
-        nn.utils.clip_grad_norm_(
-            generator.parameters(), args.clipping_threshold_g
-        )
+        nn.utils.clip_grad_norm_(generator.parameters(), args.clipping_threshold_g)
     optimizer_g.step()
 
     return losses
 
 
-def check_accuracy(args, loader, generator, discriminator, d_loss_fn, device, limit=False):
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+
+def check_accuracy(args, loader, generator, discriminator, d_loss_fn, device, predict=False, limit=False):
     d_losses = []
     metrics = {}
-    g_l2_losses_abs, g_l2_losses_rel = ([],) * 2
-    disp_error, disp_error_l, disp_error_nl = ([],) * 3
-    f_disp_error, f_disp_error_l, f_disp_error_nl = ([],) * 3
+    g_l2_losses_abs, g_l2_losses_rel = [], []
+    disp_error, disp_error_l, disp_error_nl = [], [], []
+    f_disp_error, f_disp_error_l, f_disp_error_nl = [], [], []
     total_traj, total_traj_l, total_traj_nl = 0, 0, 0
     loss_mask_sum = 0
     generator.eval()
@@ -435,19 +430,11 @@ def check_accuracy(args, loader, generator, discriminator, d_loss_fn, device, li
         for batch in loader:
             batch = [tensor.to(device) for tensor in batch]
             (obs_traj, pred_traj_gt, obs_traj_rel, pred_traj_gt_rel,
-             non_linear_ped, loss_mask, seq_start_end) = batch
+             non_linear_ped, loss_mask, seq_start_end, mean_rel, std_rel) = batch
             linear_ped = 1 - non_linear_ped
             loss_mask = loss_mask[:, args.obs_len:]
 
-            # TODO: expand for feature_count later
-            target = pred_traj_gt_rel.permute(1, 0, 2)[:, :-1, :]
-            target_c = torch.zeros((target.shape[0], target.shape[1], 1)).to(device)
-            target = torch.cat((target, target_c), -1)
-            start_of_seq = torch.Tensor([0, 0, 1]).unsqueeze(0).unsqueeze(1).repeat(target.shape[0], 1, 1).to(device)
-            dec_inp = torch.cat((start_of_seq, target), 1)
-            trg_att = subsequent_mask(dec_inp.shape[1]).repeat(dec_inp.shape[0], 1, 1).to(device)
-
-            pred_traj_fake_rel = generator(obs_traj, obs_traj_rel, seq_start_end, dec_inp, trg_att)
+            pred_traj_fake_rel = generator(obs_traj, obs_traj_rel, pred_traj_gt_rel, seq_start_end, predict, mean_rel, std_rel)
             pred_traj_fake = relative_to_abs(pred_traj_fake_rel, obs_traj[-1])
 
             g_l2_loss_abs, g_l2_loss_rel = cal_l2_losses(
@@ -463,17 +450,19 @@ def check_accuracy(args, loader, generator, discriminator, d_loss_fn, device, li
             traj_fake = torch.cat([obs_traj, pred_traj_fake], dim=0)
             traj_fake_rel = torch.cat([obs_traj_rel, pred_traj_fake_rel], dim=0)
 
-            scores_fake = discriminator(traj_fake, traj_fake_rel, seq_start_end)
-            scores_real = discriminator(traj_real, traj_real_rel, seq_start_end)
+            scores_fake = discriminator(traj_fake, traj_fake_rel, mean_rel, std_rel, seq_start_end)
+            scores_real = discriminator(traj_real, traj_real_rel, mean_rel, std_rel, seq_start_end)
 
             d_loss = d_loss_fn(scores_real, scores_fake)
             d_losses.append(d_loss.item())
 
             g_l2_losses_abs.append(g_l2_loss_abs.item())
             g_l2_losses_rel.append(g_l2_loss_rel.item())
+
             disp_error.append(mad.item())
             disp_error_l.append(mad_l.item())
             disp_error_nl.append(mad_nl.item())
+
             f_disp_error.append(fad.item())
             f_disp_error_l.append(fad_l.item())
             f_disp_error_nl.append(fad_nl.item())
@@ -498,8 +487,7 @@ def check_accuracy(args, loader, generator, discriminator, d_loss_fn, device, li
         metrics['mad_l'] = 0
         metrics['fad_l'] = 0
     if total_traj_nl != 0:
-        metrics['mad_nl'] = sum(disp_error_nl) / (
-            total_traj_nl * args.pred_len)
+        metrics['mad_nl'] = sum(disp_error_nl) / (total_traj_nl * args.pred_len)
         metrics['fad_nl'] = sum(f_disp_error_nl) / total_traj_nl
     else:
         metrics['mad_nl'] = 0

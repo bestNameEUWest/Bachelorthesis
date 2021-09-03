@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
 
-from sgan.models.STFEncoder import STFEncoder
 from sgan.models.Pooling import PoolHiddenNet
 from sgan.models.Utils import make_mlp, log
+from sgan.models.transformer.custom_transformer import TransformerEncoder
 
 
 class TrajectoryDiscriminator(nn.Module):
@@ -14,15 +14,14 @@ class TrajectoryDiscriminator(nn.Module):
         super(TrajectoryDiscriminator, self).__init__()
 
         self.d_type = d_type
+        self.device = device
 
-        # log('Trajectory d sgan enc h_dim size', h_dim)
-        self.encoder = STFEncoder(
-            device=device,
-            feature_count=feature_count,
-            layer_count=layer_count,
-            emb_size=tf_emb_dim,
-            ff_size=tf_ff_size,
-            heads=heads,
+        self.encoder = TransformerEncoder(
+            enc_inp_size=feature_count,
+            n=layer_count,
+            d_model=tf_emb_dim,
+            d_ff=tf_ff_size,
+            h=heads,
             dropout=dropout
         )
 
@@ -44,7 +43,7 @@ class TrajectoryDiscriminator(nn.Module):
                 batch_norm=batch_norm
             )
 
-    def forward(self, traj, traj_rel, seq_start_end=None):
+    def forward(self, traj, traj_rel, mean, std, seq_start_end=None):
         """
         Inputs:
         - traj: Tensor of shape (obs_len + pred_len, batch, 2)
@@ -54,10 +53,10 @@ class TrajectoryDiscriminator(nn.Module):
         - scores: Tensor of shape (batch,) with real/fake scores
         """
 
-        traj_rel = traj_rel.permute(1, 0, 2)
-        src_att = torch.ones((traj_rel.shape[0], 1, traj_rel.shape[1])).to(traj_rel)
+        inp = (traj_rel.permute(1, 0, 2)[:, 1:, :].to(self.device) - mean) / std
+        src_att = torch.ones((inp.shape[0], 1, inp.shape[1])).to(self.device)
 
-        final_h = self.encoder(traj_rel, src_att)
+        final_h = self.encoder(inp, src_att)
         final_h = final_h.permute(1, 0, 2)
 
         # Note: In case of 'global' option we are using start_pos as opposed to
