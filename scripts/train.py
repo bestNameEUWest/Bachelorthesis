@@ -230,8 +230,8 @@ def objective(trial):
             checkpoint['counters']['epoch'] = epoch
 
             # Check stats on the validation set
-            metrics_val = check_accuracy(args, val_loader, generator, discriminator, d_loss_fn, device)
-            metrics_train = check_accuracy(args, train_loader, generator, discriminator, d_loss_fn, device, limit=True)
+            metrics_val = check_accuracy(args, val_loader, generator, discriminator, d_loss_fn, device, True)
+            metrics_train = check_accuracy(args, train_loader, generator, discriminator, d_loss_fn, device, False, limit=True)
 
             if args.timing == 1:
                 cp_time = time.time() - t0
@@ -279,11 +279,9 @@ def objective(trial):
             checkpoint['g_optim_state'] = optimizer_g.state_dict()
             checkpoint['d_state'] = discriminator.state_dict()
             checkpoint['d_optim_state'] = optimizer_d.state_dict()
-            checkpoint_path = os.path.join(args.output_dir, f'{args.checkpoint_name}_with_model.pt')
 
             # Save a checkpoint with no model weights by making a shallow
             # copy of the checkpoint excluding some items
-            checkpoint_path = os.path.join(args.output_dir, f'{args.checkpoint_name}_no_model.pt')
             key_blacklist = [
                 'g_state', 'd_state', 'g_best_state', 'g_best_nl_state', 'g_optim_state', 'd_optim_state',
                 'd_best_state', 'd_best_nl_state'
@@ -332,7 +330,7 @@ def discriminator_step(args, batch, generator, discriminator, d_loss_fn, optimiz
     losses = {}
     loss = torch.zeros(1).to(pred_traj_gt)
 
-    pred_traj_fake_rel = generator(obs_traj, obs_traj_rel, pred_traj_gt_rel, seq_start_end)
+    pred_traj_fake_rel = generator(obs_traj, obs_traj_rel, pred_traj_gt_rel, seq_start_end, False)
 
     pred_traj_fake = relative_to_abs(pred_traj_fake_rel, obs_traj[-1])
 
@@ -369,7 +367,7 @@ def generator_step(args, batch, generator, discriminator, g_loss_fn, optimizer_g
     loss_mask = loss_mask[:, args.obs_len:]
 
     for _ in range(args.best_k):
-        pred_traj_fake_rel = generator(obs_traj, obs_traj_rel, pred_traj_gt_rel, seq_start_end)
+        pred_traj_fake_rel = generator(obs_traj, obs_traj_rel, pred_traj_gt_rel, seq_start_end, False)
         pred_traj_fake = relative_to_abs(pred_traj_fake_rel, obs_traj[-1])
 
         if args.l2_loss_weight > 0:
@@ -414,7 +412,7 @@ def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
-def check_accuracy(args, loader, generator, discriminator, d_loss_fn, device, limit=False):
+def check_accuracy(args, loader, generator, discriminator, d_loss_fn, device, predict, limit=False):
     d_losses = []
     metrics = {}
     g_l2_losses_abs, g_l2_losses_rel = [], []
@@ -431,7 +429,7 @@ def check_accuracy(args, loader, generator, discriminator, d_loss_fn, device, li
             linear_ped = 1 - non_linear_ped
             loss_mask = loss_mask[:, args.obs_len:]
 
-            pred_traj_fake_rel = generator(obs_traj, obs_traj_rel, pred_traj_gt_rel, seq_start_end)
+            pred_traj_fake_rel = generator(obs_traj, obs_traj_rel, pred_traj_gt_rel, seq_start_end, predict)
             pred_traj_fake = relative_to_abs(pred_traj_fake_rel, obs_traj[-1])
 
             g_l2_loss_abs, g_l2_loss_rel = cal_l2_losses(
