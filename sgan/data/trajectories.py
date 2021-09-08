@@ -18,11 +18,6 @@ def seq_collate(data):
 
     _len = [len(seq) for seq in obs_seq_list]
 
-    #logger.info('obs_seq_list len')
-    #logger.info(obs_seq_list)
-    #logger.info('coll: _len')
-    #logger.info(_len)
-    # exit()
     cum_start_idx = [0] + np.cumsum(_len).tolist()
     seq_start_end = [[start, end] for start, end in zip(cum_start_idx, cum_start_idx[1:])]
 
