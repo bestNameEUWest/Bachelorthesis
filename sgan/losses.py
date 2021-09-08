@@ -84,13 +84,15 @@ def displacement_error(pred_traj, pred_traj_gt, consider_ped=None, mode='sum'):
     Output:
     - loss: gives the eculidian displacement error
     """
-    seq_len, _, _ = pred_traj.size()
+    seq_len, batch_size, _ = pred_traj.size()
     loss = pred_traj_gt.permute(1, 0, 2) - pred_traj.permute(1, 0, 2)
     loss = loss**2
+    loss = torch.sqrt(loss.sum(dim=2)).sum(dim=1)
+
     if consider_ped is not None:
-        loss = torch.sqrt(loss.sum(dim=2)).sum(dim=1) * consider_ped
+        loss = loss * consider_ped # / torch.sum(consider_ped)
     else:
-        loss = torch.sqrt(loss.sum(dim=2)).sum(dim=1)
+        loss = loss # / batch_size
     if mode == 'sum':
         return torch.sum(loss)
     elif mode == 'raw':
@@ -107,6 +109,7 @@ def final_displacement_error(pred_pos, pred_pos_gt, consider_ped=None, mode='sum
     Output:
     - loss: gives the eculidian displacement error
     """
+
     loss = pred_pos_gt - pred_pos
     loss = loss**2
     if consider_ped is not None:
