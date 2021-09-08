@@ -12,7 +12,7 @@ python -m scripts.train \
   --g_steps 1 \
   --d_steps 2 \
   --checkpoint_every 1 \
-  --num_epochs 1000 \
+  --num_epochs 500 \
   --pooling_type 'pool_net' \
   --clipping_threshold_g 1.5 \
   --best_k 10 \
@@ -30,4 +30,5 @@ python -m scripts.train \
   --layer_count 4 \
   --g_learning_rate 1e-3 \
   --d_learning_rate 1e-3 \
-  --heads 8
+  --heads 8 \
+  --optuna
