@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
 
-from sgan.models.STFEncoder import STFEncoder
 from sgan.models.Pooling import PoolHiddenNet
 from sgan.models.Utils import make_mlp, log
+from sgan.models.transformer.custom_transformer import TransformerEncoder
 
 
 class TrajectoryDiscriminator(nn.Module):
@@ -14,15 +14,16 @@ class TrajectoryDiscriminator(nn.Module):
         super(TrajectoryDiscriminator, self).__init__()
 
         self.d_type = d_type
+        self.device = device
 
         # log('Trajectory d sgan enc h_dim size', h_dim)
-        self.encoder = STFEncoder(
-            device=device,
-            feature_count=feature_count,
-            layer_count=layer_count,
-            emb_size=tf_emb_dim,
-            ff_size=tf_ff_size,
-            heads=heads,
+
+        self.encoder = TransformerEncoder(
+            enc_inp_size=feature_count,
+            n=layer_count,
+            d_model=tf_emb_dim,
+            d_ff=tf_ff_size,
+            h=heads,
             dropout=dropout
         )
 
@@ -37,7 +38,6 @@ class TrajectoryDiscriminator(nn.Module):
             mlp_pool_dims = [tf_emb_dim + pool_emb_dim, mlp_dim, tf_emb_dim]
             self.pool_net = PoolHiddenNet(
                 pool_emb_dim=pool_emb_dim,
-                h_dim=tf_emb_dim,
                 mlp_dim=mlp_pool_dims,
                 bottleneck_dim=bottleneck_dim,
                 activation=activation,

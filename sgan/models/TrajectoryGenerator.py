@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 
-from sgan.models.STFEncoder import STFEncoder
-from sgan.models.STFDecoder import STFDecoder
+
+from sgan.models.transformer.custom_transformer import TransformerEncoder, TransformerDecoder
 from sgan.models.Pooling import PoolHiddenNet
 
 from sgan.models.Utils import make_mlp, get_noise, log
@@ -12,7 +12,7 @@ class TrajectoryGenerator(nn.Module):
     def __init__(
             self, device, feature_count=2, pool_emb_dim=64, tf_emb_dim=64, tf_ff_size=2048, dec_inp_size=3,
             dec_out_size=3, mlp_dim=1024, layer_count=1, noise_dim=(0,),
-            noise_type='gaussian', noise_mix_type='ped', pooling_type=None,
+            noise_type='gaussian', noise_mix_type='ped', pooling_type=None, pred_len=12,
             dropout=0.0, heads=8, bottleneck_dim=1024, activation='relu', batch_norm=True,
     ):
         super(TrajectoryGenerator, self).__init__()
@@ -21,27 +21,28 @@ class TrajectoryGenerator(nn.Module):
             pooling_type = None
         self.device = device
         self.noise_dim = noise_dim
+        self.pred_len = pred_len
         self.noise_type = noise_type
         self.noise_mix_type = noise_mix_type
         self.pooling_type = pooling_type
         self.noise_first_dim = 0
 
-        self.encoder = STFEncoder(
-            device=device,
-            feature_count=feature_count,
-            layer_count=layer_count,
-            emb_size=tf_emb_dim,
-            ff_size=tf_ff_size,
-            heads=heads,
+        self.encoder = TransformerEncoder(
+            enc_inp_size=feature_count,
+            n=layer_count,
+            d_model=tf_emb_dim,
+            d_ff=tf_ff_size,
+            h=heads,
             dropout=dropout
         )
-        self.decoder = STFDecoder(
+
+        self.decoder = TransformerDecoder(
             dec_inp_size=dec_inp_size,
             dec_out_size=dec_out_size,
-            layer_count=layer_count,
-            emb_size=tf_emb_dim,
-            ff_size=tf_ff_size,
-            heads=heads,
+            n=layer_count,
+            d_model=tf_emb_dim,
+            d_ff=tf_ff_size,
+            h=heads,
             dropout=dropout
         )
 
@@ -66,9 +67,7 @@ class TrajectoryGenerator(nn.Module):
             input_dim = tf_emb_dim
 
         if self.mlp_decoder_needed():
-            mlp_decoder_context_dims = [
-                input_dim, mlp_dim, tf_emb_dim - self.noise_first_dim
-            ]
+            mlp_decoder_context_dims = [input_dim, mlp_dim, tf_emb_dim - self.noise_first_dim]
 
             self.mlp_decoder_context = make_mlp(
                 mlp_decoder_context_dims,
@@ -164,10 +163,5 @@ class TrajectoryGenerator(nn.Module):
 
         # Predict Trajectory
 
-        pred_traj_fake_rel = self.decoder(
-            final_encoder_h,
-            src_att,
-            dec_inp,
-            trg_att,
-        )
+        pred_traj_fake_rel = self.decoder(final_encoder_h, src_att, dec_inp, trg_att).permute(1, 0, 2)[:, :, 0:2].contiguous()
         return pred_traj_fake_rel
