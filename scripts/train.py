@@ -326,7 +326,7 @@ def objective(trial):
 def discriminator_step(args, batch, generator, discriminator, d_loss_fn, optimizer_d, device):
     batch = [tensor.to(device) for tensor in batch]
     (obs_traj, pred_traj_gt, obs_traj_rel, pred_traj_gt_rel, non_linear_ped,
-     loss_mask, seq_start_end) = batch
+     loss_mask, seq_start_end, mean_rel, std_rel) = batch
     losses = {}
     loss = torch.zeros(1).to(pred_traj_gt)
 
@@ -359,7 +359,8 @@ def discriminator_step(args, batch, generator, discriminator, d_loss_fn, optimiz
 
 def generator_step(args, batch, generator, discriminator, g_loss_fn, optimizer_g, device):
     batch = [tensor.to(device) for tensor in batch]
-    (obs_traj, pred_traj_gt, obs_traj_rel, pred_traj_gt_rel, non_linear_ped, loss_mask, seq_start_end) = batch
+    (obs_traj, pred_traj_gt, obs_traj_rel, pred_traj_gt_rel, non_linear_ped,
+     loss_mask, seq_start_end, mean_rel, std_rel) = batch
     losses = {}
     loss = torch.zeros(1).to(pred_traj_gt)
     g_l2_loss_rel = []
@@ -425,7 +426,7 @@ def check_accuracy(args, loader, generator, discriminator, d_loss_fn, device, pr
         for batch in loader:
             batch = [tensor.to(device) for tensor in batch]
             (obs_traj, pred_traj_gt, obs_traj_rel, pred_traj_gt_rel,
-             non_linear_ped, loss_mask, seq_start_end) = batch
+             non_linear_ped, loss_mask, seq_start_end, mean_rel, std_rel) = batch
             linear_ped = 1 - non_linear_ped
             loss_mask = loss_mask[:, args.obs_len:]
 
