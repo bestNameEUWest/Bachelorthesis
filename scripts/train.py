@@ -23,9 +23,8 @@ from sgan.losses import displacement_error, final_displacement_error
 from sgan.models.TrajectoryGenerator import TrajectoryGenerator
 from sgan.models.TrajectoryDiscriminator import TrajectoryDiscriminator
 
-from scripts.modules.Utils import get_total_norm, relative_to_abs, get_dset_path, int_tuple
+from scripts.modules.Utils import get_total_norm, relative_to_abs, get_dset_path
 from sgan.models.Utils import log
-from sgan.models.transformer.batch import subsequent_mask
 
 torch.backends.cudnn.benchmark = True
 
@@ -89,7 +88,7 @@ def objective(trial):
         mlp_dim=args.mlp_dim,
         noise_dim=args.noise_dim,
         noise_type=args.noise_type,
-        # pred_len=args.pred_len,
+        pred_len=args.pred_len,
         noise_mix_type=args.noise_mix_type,
         pooling_type=args.pooling_type,
         dropout=args.dropout,
@@ -333,17 +332,8 @@ def discriminator_step(args, batch, generator, discriminator, d_loss_fn, optimiz
     losses = {}
     loss = torch.zeros(1).to(pred_traj_gt)
 
-    # TODO: expand for feature_count later
-    target = pred_traj_gt_rel.permute(1, 0, 2)[:, :-1, :]
-    target_c = torch.zeros((target.shape[0], target.shape[1], 1)).to(device)
-    target = torch.cat((target, target_c), -1)
-    start_of_seq = torch.Tensor([0, 0, 1]).unsqueeze(0).unsqueeze(1).repeat(target.shape[0], 1, 1).to(device)
-    dec_inp = torch.cat((start_of_seq, target), 1)
-    trg_att = subsequent_mask(dec_inp.shape[1]).repeat(dec_inp.shape[0], 1, 1).to(device)
+    pred_traj_fake_rel = generator(obs_traj, obs_traj_rel, pred_traj_gt_rel, seq_start_end)
 
-    generator_out = generator(obs_traj, obs_traj_rel, seq_start_end, dec_inp, trg_att)
-
-    pred_traj_fake_rel = generator_out
     pred_traj_fake = relative_to_abs(pred_traj_fake_rel, obs_traj[-1])
 
     traj_real = torch.cat([obs_traj, pred_traj_gt], dim=0)
@@ -371,25 +361,15 @@ def discriminator_step(args, batch, generator, discriminator, d_loss_fn, optimiz
 
 def generator_step(args, batch, generator, discriminator, g_loss_fn, optimizer_g, device):
     batch = [tensor.to(device) for tensor in batch]
-    (obs_traj, pred_traj_gt, obs_traj_rel, pred_traj_gt_rel, non_linear_ped,
-     loss_mask, seq_start_end) = batch
+    (obs_traj, pred_traj_gt, obs_traj_rel, pred_traj_gt_rel, non_linear_ped, loss_mask, seq_start_end) = batch
     losses = {}
     loss = torch.zeros(1).to(pred_traj_gt)
     g_l2_loss_rel = []
 
     loss_mask = loss_mask[:, args.obs_len:]
 
-    # TODO: expand for feature_count later
-    target = pred_traj_gt_rel.permute(1, 0, 2)[:, :-1, :]
-    target_c = torch.zeros((target.shape[0], target.shape[1], 1)).to(device)
-    target = torch.cat((target, target_c), -1)
-    start_of_seq = torch.Tensor([0, 0, 1]).unsqueeze(0).unsqueeze(1).repeat(target.shape[0], 1, 1).to(device)
-    dec_inp = torch.cat((start_of_seq, target), 1)
-    trg_att = subsequent_mask(dec_inp.shape[1]).repeat(dec_inp.shape[0], 1, 1).to(device)
     for _ in range(args.best_k):
-        generator_out = generator(obs_traj, obs_traj_rel, seq_start_end, dec_inp, trg_att)
-
-        pred_traj_fake_rel = generator_out
+        pred_traj_fake_rel = generator(obs_traj, obs_traj_rel, pred_traj_gt_rel, seq_start_end)
         pred_traj_fake = relative_to_abs(pred_traj_fake_rel, obs_traj[-1])
 
         if args.l2_loss_weight > 0:
@@ -451,15 +431,7 @@ def check_accuracy(args, loader, generator, discriminator, d_loss_fn, device, li
             linear_ped = 1 - non_linear_ped
             loss_mask = loss_mask[:, args.obs_len:]
 
-            # TODO: expand for feature_count later
-            target = pred_traj_gt_rel.permute(1, 0, 2)[:, :-1, :]
-            target_c = torch.zeros((target.shape[0], target.shape[1], 1)).to(device)
-            target = torch.cat((target, target_c), -1)
-            start_of_seq = torch.Tensor([0, 0, 1]).unsqueeze(0).unsqueeze(1).repeat(target.shape[0], 1, 1).to(device)
-            dec_inp = torch.cat((start_of_seq, target), 1)
-            trg_att = subsequent_mask(dec_inp.shape[1]).repeat(dec_inp.shape[0], 1, 1).to(device)
-
-            pred_traj_fake_rel = generator(obs_traj, obs_traj_rel, seq_start_end, dec_inp, trg_att)
+            pred_traj_fake_rel = generator(obs_traj, obs_traj_rel, pred_traj_gt_rel, seq_start_end)
             pred_traj_fake = relative_to_abs(pred_traj_fake_rel, obs_traj[-1])
 
             g_l2_loss_abs, g_l2_loss_rel = cal_l2_losses(

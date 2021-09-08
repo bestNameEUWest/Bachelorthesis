@@ -5,6 +5,7 @@ import torch.nn as nn
 from sgan.models.transformer.custom_transformer import TransformerEncoder, TransformerDecoder
 from sgan.models.Pooling import PoolHiddenNet
 
+from sgan.models.transformer.batch import subsequent_mask
 from sgan.models.Utils import make_mlp, get_noise, log
 
 
@@ -125,7 +126,7 @@ class TrajectoryGenerator(nn.Module):
         else:
             return False
 
-    def forward(self, obs_traj, obs_traj_rel, seq_start_end, dec_inp, trg_att, user_noise=None):
+    def forward(self, obs_traj, obs_traj_rel, pred_traj_gt_rel, seq_start_end, user_noise=None):
         """
         Inputs:
         - obs_traj: Tensor of shape (obs_len, batch, 2)
@@ -137,8 +138,16 @@ class TrajectoryGenerator(nn.Module):
         - pred_traj_rel: Tensor of shape (self.pred_len, batch, 2)
         """
 
+        target = pred_traj_gt_rel.permute(1, 0, 2)[:, :-1, :]
+        target_c = torch.zeros((target.shape[0], target.shape[1], 1)).to(self.device)
+        target = torch.cat((target, target_c), -1)
+        start_of_seq = torch.Tensor([0, 0, 1]).unsqueeze(0).unsqueeze(1).repeat(target.shape[0], 1, 1).to(self.device)
+        dec_inp = torch.cat((start_of_seq, target), 1)
+        trg_att = subsequent_mask(dec_inp.shape[1]).repeat(dec_inp.shape[0], 1, 1).to(self.device)
+
         inp = obs_traj_rel.permute(1, 0, 2)[:, 1:, :].to(self.device)
         src_att = torch.ones((inp.shape[0], 1, inp.shape[1])).to(self.device)
+
         final_encoder_h = self.encoder(inp, src_att)
         final_encoder_h = final_encoder_h.permute(1, 0, 2)
 
