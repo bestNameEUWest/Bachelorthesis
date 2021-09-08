@@ -168,10 +168,8 @@ class SocialPooling(nn.Module):
                     top_left, curr_end_pos).type_as(seq_start_end)
             # Make all positions to exclude as non-zero
             # Find which peds to exclude
-            x_bound = ((curr_end_pos[:, 0] >= bottom_right[:, 0]) +
-                       (curr_end_pos[:, 0] <= top_left[:, 0]))
-            y_bound = ((curr_end_pos[:, 1] >= top_left[:, 1]) +
-                       (curr_end_pos[:, 1] <= bottom_right[:, 1]))
+            x_bound = ((curr_end_pos[:, 0] >= bottom_right[:, 0]) + (curr_end_pos[:, 0] <= top_left[:, 0]))
+            y_bound = ((curr_end_pos[:, 1] >= top_left[:, 1]) + (curr_end_pos[:, 1] <= bottom_right[:, 1]))
 
             within_bound = x_bound + y_bound
             within_bound[0::num_ped + 1] = 1  # Don't include the ped itself
@@ -182,9 +180,7 @@ class SocialPooling(nn.Module):
             # dump all uncessary adds.
             grid_pos += 1
             total_grid_size = self.grid_size * self.grid_size
-            offset = torch.arange(
-                0, total_grid_size * num_ped, total_grid_size
-            ).type_as(seq_start_end)
+            offset = torch.arange(0, total_grid_size * num_ped, total_grid_size).type_as(seq_start_end)
 
             offset = self.repeat(offset.view(-1, 1), num_ped).view(-1)
             grid_pos += offset
