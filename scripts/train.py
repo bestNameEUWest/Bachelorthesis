@@ -22,6 +22,7 @@ from sgan.losses import displacement_error, final_displacement_error
 
 from sgan.models.TrajectoryGenerator import TrajectoryGenerator
 from sgan.models.TrajectoryDiscriminator import TrajectoryDiscriminator
+from sgan.models.SGANTrajectoryDiscriminator import SGANTrajectoryDiscriminator
 
 from scripts.modules.Utils import get_total_norm, relative_to_abs, get_dset_path
 from sgan.models.Utils import log
@@ -60,13 +61,13 @@ def objective(trial):
 
     # Define hyperparams
     if args.optuna:
-        args.tf_emb_dim = 2 ** trial.suggest_int("tf_emb_dim_exp", 6, 8)  # 64 - 256
-        args.tf_ff_size = 2 ** trial.suggest_int("tf_ff_size_exp", 4, 10)  # 32 - 1024
-        args.pool_emb_dim = 2 ** trial.suggest_int("pool_emb_dim_exp", 4, 8)  # 32 - 256
-        args.bottleneck_dim = 2 ** trial.suggest_int("bottleneck_dim_exp", 3, 7)  # 16 - 128
+        args.tf_emb_dim = 2 ** trial.suggest_int("tf_emb_dim_exp", 6, 7)  # 64 - 128
+        args.tf_ff_size = 2 ** trial.suggest_int("tf_ff_size_exp", 4, 9)  # 32 - 512
+        args.pool_emb_dim = 2 ** trial.suggest_int("pool_emb_dim_exp", 4, 7)  # 32 - 128
+        args.bottleneck_dim = 2 ** trial.suggest_int("bottleneck_dim_exp", 3, 6)  # 16 - 64
         args.mlp_dim = 2 ** trial.suggest_int("mlp_dim_exp", 3, 6)  # 16 - 64
         args.noise_dim = (2 ** trial.suggest_int("noise_dim_exp", 2, 5),)  # 4 - 32
-        args.layer_count = trial.suggest_int("layer_count", 1, 6)
+        args.layer_count = trial.suggest_int("layer_count", 1, 4)
         args.g_learning_rate = trial.suggest_float("g_learning_rate", 1e-5, 1e-2, log=True)
         args.d_learning_rate = trial.suggest_float("d_learning_rate", 1e-5, 1e-2, log=True)
         args.heads = 2 ** trial.suggest_int("heads_exp", 1, 3)  # 2 - 8
@@ -103,15 +104,30 @@ def objective(trial):
     generator.type(float_dtype).train()
     torch.autograd.set_detect_anomaly(True)
 
-    discriminator = TrajectoryDiscriminator(
-        device=device,
-        pool_emb_dim=args.pool_emb_dim,
-        mlp_dim=args.mlp_dim,
-        dropout=args.dropout,
-        batch_norm=args.batch_norm,
-        d_type=args.d_type,
-        activation='leakyrelu',
-    )
+    if args.sgan_d:
+        discriminator = SGANTrajectoryDiscriminator(
+            device=device,
+            tf_emb_dim=args.tf_emb_dim,
+            d_layer_count=args.sgan_d_layer_count,
+            d_emb_dim=args.sgan_d_emb_dim,
+            bottleneck_dim=args.bottleneck_dim,
+            pool_emb_dim=args.pool_emb_dim,
+            dropout=args.dropout,
+            mlp_dim=args.mlp_dim,
+            activation='leakyrelu',
+            batch_norm=args.batch_norm,
+            d_type=args.d_type,
+        )
+    else:
+        discriminator = TrajectoryDiscriminator(
+            device=device,
+            pool_emb_dim=args.pool_emb_dim,
+            mlp_dim=args.mlp_dim,
+            dropout=args.dropout,
+            batch_norm=args.batch_norm,
+            d_type=args.d_type,
+            activation='leakyrelu',
+        )
 
     discriminator.apply(init_weights)
     discriminator.type(float_dtype).train()
@@ -204,7 +220,7 @@ def objective(trial):
     while epoch < args.num_epochs:
         d_steps_left = args.d_steps
         g_steps_left = args.g_steps
-        logger.info(f'Starting epoch {epoch+1}')
+        # logger.info(f'Starting epoch {epoch+1}')
         for batch in train_loader:
             gc.collect()
 

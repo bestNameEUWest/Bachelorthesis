@@ -3,6 +3,7 @@ import os
 
 from scripts.modules.Utils import int_tuple, bool_flag
 
+
 def parse_args():
     parser = argparse.ArgumentParser()
 
@@ -23,6 +24,9 @@ def parse_args():
     parser.add_argument('--num_epochs', default=200, type=int)
 
     # Model Options
+    parser.add_argument('--sgan_d', action='store_true')
+    parser.add_argument('--sgan_d_layer_count', default=1, type=int)
+    parser.add_argument('--sgan_d_emb_dim', default=64, type=int)
     parser.add_argument('--pool_emb_dim', default=64, type=int)
     parser.add_argument('--tf_emb_dim', default=512, type=int)
     parser.add_argument('--tf_ff_size', default=2048, type=int)

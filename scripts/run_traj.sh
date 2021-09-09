@@ -31,4 +31,7 @@ python -m scripts.train \
   --g_learning_rate 1e-3 \
   --d_learning_rate 1e-3 \
   --heads 8 \
-  --optuna
+  --sgan_d_layer_count 1 \
+  --sgan_d_emb_dim 64 \
+  --optuna \
+  --sgan_d

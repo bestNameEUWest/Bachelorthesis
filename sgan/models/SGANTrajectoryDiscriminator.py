@@ -5,16 +5,18 @@ from sgan.models.Pooling import PoolHiddenNet
 from sgan.models.Utils import make_mlp, log
 
 
-class TrajectoryDiscriminator(nn.Module):
+class SGANTrajectoryDiscriminator(nn.Module):
     def __init__(
-        self, device, tf_emb_dim=64, bottleneck_dim=1024,
+        self, device, tf_emb_dim=64, d_layer_count=1, d_emb_dim=64, bottleneck_dim=1024,
         pool_emb_dim=64, dropout=0.1, mlp_dim=1024, activation='relu', batch_norm=True, d_type='local',
     ):
-        super(TrajectoryDiscriminator, self).__init__()
+        super(SGANTrajectoryDiscriminator, self).__init__()
 
         self.d_type = d_type
         self.device = device
-        self.embedding_dim = tf_emb_dim
+        self.tf_emb_dim = tf_emb_dim
+        self.d_lstm_layer_count = d_layer_count
+        self.d_emb_dim = d_emb_dim
 
         real_classifier_dims = [tf_emb_dim, mlp_dim, 1]
         self.real_classifier = make_mlp(
@@ -24,7 +26,7 @@ class TrajectoryDiscriminator(nn.Module):
             dropout=dropout
         )
         self.spatial_embedding = nn.Linear(2, tf_emb_dim)
-        self.encoder = nn.LSTM(tf_emb_dim, 64, 1, dropout=dropout)
+        self.encoder = nn.LSTM(tf_emb_dim, d_emb_dim, d_layer_count, dropout=dropout)
 
 
         if d_type == 'global':
@@ -39,8 +41,8 @@ class TrajectoryDiscriminator(nn.Module):
 
     def init_hidden(self, batch):
         return (
-            torch.zeros(1, batch, 64).cuda(), # num_layers and h_dim
-            torch.zeros(1, batch, 64).cuda()
+            torch.zeros(self.d_layer_count, batch, self.d_emb_dim).cuda(),
+            torch.zeros(self.d_layer_count, batch, self.d_emb_dim).cuda()
         )
 
     def forward(self, traj, traj_rel, seq_start_end=None):
@@ -54,7 +56,7 @@ class TrajectoryDiscriminator(nn.Module):
         """
         batch = traj_rel.size(1)
         obs_traj_embedding = self.spatial_embedding(traj_rel.view(-1, 2))
-        obs_traj_embedding = obs_traj_embedding.view(-1, batch, self.embedding_dim)
+        obs_traj_embedding = obs_traj_embedding.view(-1, batch, self.tf_emb_dim)
         state_tuple = self.init_hidden(batch)
         output, state = self.encoder(obs_traj_embedding, state_tuple)
         final_h = state[0]
