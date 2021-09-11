@@ -71,6 +71,8 @@ def objective(trial):
         args.g_learning_rate = trial.suggest_float("g_learning_rate", 1e-5, 1e-2, log=True)
         args.d_learning_rate = trial.suggest_float("d_learning_rate", 1e-5, 1e-2, log=True)
         args.heads = 2 ** trial.suggest_int("heads_exp", 1, 3)  # 2 - 8
+        if args.sgan_d:
+            args.sgan_d_emb_dim = 2 ** trial.suggest_int("sgan_d_emb_dim_exp", 4, 8)  # 32 - 256
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_num
     args.train_path = get_dset_path(args.dataset_name, 'train')
@@ -193,6 +195,7 @@ def objective(trial):
         "g_learning_rate": args.g_learning_rate,
         "d_learning_rate": args.d_learning_rate,
         "heads": args.heads,
+        "sgan_d_emb_dim": args.sgan_d_emb_dim,
         "g_param_count": generator_params,
         "d_param_count": discriminator_params
     }
@@ -220,7 +223,8 @@ def objective(trial):
     while epoch < args.num_epochs:
         d_steps_left = args.d_steps
         g_steps_left = args.g_steps
-        # logger.info(f'Starting epoch {epoch+1}')
+        if epoch % 100 == 0:
+            logger.info(f'Starting epoch {epoch+1}')
         for batch in train_loader:
             gc.collect()
 
