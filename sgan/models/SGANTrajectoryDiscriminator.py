@@ -15,10 +15,10 @@ class SGANTrajectoryDiscriminator(nn.Module):
         self.d_type = d_type
         self.device = device
         self.tf_emb_dim = tf_emb_dim
-        self.d_lstm_layer_count = d_layer_count
+        self.d_layer_count = d_layer_count
         self.d_emb_dim = d_emb_dim
 
-        real_classifier_dims = [tf_emb_dim, mlp_dim, 1]
+        real_classifier_dims = [d_emb_dim, mlp_dim, 1]
         self.real_classifier = make_mlp(
             real_classifier_dims,
             activation=activation,
