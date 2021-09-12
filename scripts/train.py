@@ -61,18 +61,19 @@ def objective(trial):
 
     # Define hyperparams
     if args.optuna:
-        args.tf_emb_dim = 2 ** trial.suggest_int("tf_emb_dim_exp", 6, 7)  # 64 - 128
-        args.tf_ff_size = 2 ** trial.suggest_int("tf_ff_size_exp", 4, 9)  # 32 - 512
-        args.pool_emb_dim = 2 ** trial.suggest_int("pool_emb_dim_exp", 4, 7)  # 32 - 128
-        args.bottleneck_dim = 2 ** trial.suggest_int("bottleneck_dim_exp", 3, 6)  # 16 - 64
-        args.mlp_dim = 2 ** trial.suggest_int("mlp_dim_exp", 3, 6)  # 16 - 64
+        args.tf_emb_dim = 2 ** trial.suggest_int("tf_emb_dim_exp", 3, 8)  # 8 - 256
+        args.tf_ff_size = 2 ** trial.suggest_int("tf_ff_size_exp", 2, 10)  # 4 - 1024
+        args.pool_emb_dim = 2 ** trial.suggest_int("pool_emb_dim_exp", 2, 9)  # 4 - 512
+        args.bottleneck_dim = 2 ** trial.suggest_int("bottleneck_dim_exp", 2, 8)  # 4 - 256
+        args.mlp_dim = 2 ** trial.suggest_int("mlp_dim_exp", 2, 6)  # 4 - 64
         args.noise_dim = (2 ** trial.suggest_int("noise_dim_exp", 2, 5),)  # 4 - 32
-        args.layer_count = trial.suggest_int("layer_count", 1, 4)
+        args.layer_count = trial.suggest_int("layer_count", 2, 4)
+        args.dropout = trial.suggest_float("dropout", 1e-1, 5e-1)
         args.g_learning_rate = trial.suggest_float("g_learning_rate", 1e-5, 1e-2, log=True)
         args.d_learning_rate = trial.suggest_float("d_learning_rate", 1e-5, 1e-2, log=True)
         args.heads = 2 ** trial.suggest_int("heads_exp", 1, 3)  # 2 - 8
         if args.sgan_d:
-            args.sgan_d_emb_dim = 2 ** trial.suggest_int("sgan_d_emb_dim_exp", 4, 8)  # 32 - 256
+            args.sgan_d_emb_dim = 2 ** trial.suggest_int("sgan_d_emb_dim_exp", 2, 8)  # 4 - 256
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_num
     args.train_path = get_dset_path(args.dataset_name, 'train')
@@ -196,6 +197,7 @@ def objective(trial):
         "d_learning_rate": args.d_learning_rate,
         "heads": args.heads,
         "sgan_d_emb_dim": args.sgan_d_emb_dim,
+        "dropout": args.dropout,
         "g_param_count": generator_params,
         "d_param_count": discriminator_params
     }
@@ -533,7 +535,7 @@ def cal_fad(pred_traj_gt, pred_traj_fake, linear_ped, non_linear_ped):
 
 if __name__ == '__main__':
     study = optuna.create_study()
-    study.optimize(objective, n_trials=40, gc_after_trial=True)
+    study.optimize(objective, n_trials=80, gc_after_trial=True)
 
     pruned_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED]
     complete_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
