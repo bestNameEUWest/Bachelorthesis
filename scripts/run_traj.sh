@@ -7,7 +7,7 @@ python -m scripts.train \
   --noise_mix_type global \
   --l2_loss_weight 1 \
   --batch_norm 0 \
-  --dropout 0 \
+  --dropout 0.5 \
   --batch_size 64 \
   --g_steps 1 \
   --d_steps 2 \
