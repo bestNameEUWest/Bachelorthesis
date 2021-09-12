@@ -61,7 +61,7 @@ def objective(trial):
 
     # Define hyperparams
     if args.optuna:
-        args.tf_emb_dim = 2 ** trial.suggest_int("tf_emb_dim_exp", 3, 8)  # 8 - 256
+        args.tf_emb_dim = 2 ** trial.suggest_int("tf_emb_dim_exp", 6, 8)  # 64 - 256
         args.tf_ff_size = 2 ** trial.suggest_int("tf_ff_size_exp", 2, 10)  # 4 - 1024
         args.pool_emb_dim = 2 ** trial.suggest_int("pool_emb_dim_exp", 2, 9)  # 4 - 512
         args.bottleneck_dim = 2 ** trial.suggest_int("bottleneck_dim_exp", 2, 8)  # 4 - 256
