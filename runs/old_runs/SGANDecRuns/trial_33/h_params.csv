@@ -1,0 +1,2 @@
+tf_emb_dim,tf_ff_size,pool_emb_dim,bottleneck_dim,mlp_dim,noise_dim,layer_count,g_learning_rate,d_learning_rate,heads,sgan_d_emb_dim,g_param_count,d_param_count
+128,64,128,32,16,4,3,3.0276092746223177e-05,1.5818196883498345e-05,4,32,3768575,21665
