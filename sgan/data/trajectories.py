@@ -173,7 +173,7 @@ class TrajectoryDataset(Dataset):
         seq_list_rel = np.concatenate(seq_list_rel, axis=0)
         loss_mask_list = np.concatenate(loss_mask_list, axis=0)
         non_linear_ped = np.asarray(non_linear_ped)
-                
+
         
         # Convert numpy -> Torch Tensor
         self.obs_traj = torch.from_numpy(seq_list[:, :, :self.obs_len]).type(torch.float)

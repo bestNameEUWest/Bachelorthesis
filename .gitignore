@@ -5,7 +5,8 @@
 
 ### files ###
 pytorch_data_save/*
-
+gan_tests_no_model.pt
+gan_tests_with_model.pt
 tmp.sh
 rename.py
 __pycache__/**

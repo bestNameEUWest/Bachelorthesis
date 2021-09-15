@@ -352,7 +352,7 @@ def discriminator_step(args, batch, generator, discriminator, d_loss_fn, optimiz
     losses = {}
     loss = torch.zeros(1).to(pred_traj_gt)
 
-    pred_traj_fake_rel = generator(obs_traj, obs_traj_rel, pred_traj_gt_rel, seq_start_end, False)
+    pred_traj_fake_rel = generator(obs_traj, obs_traj_rel, pred_traj_gt_rel, seq_start_end, False, mean_rel, std_rel)
 
     pred_traj_fake = relative_to_abs(pred_traj_fake_rel, obs_traj[-1])
 
@@ -390,7 +390,7 @@ def generator_step(args, batch, generator, discriminator, g_loss_fn, optimizer_g
     loss_mask = loss_mask[:, args.obs_len:]
 
     for _ in range(args.best_k):
-        pred_traj_fake_rel = generator(obs_traj, obs_traj_rel, pred_traj_gt_rel, seq_start_end, False)
+        pred_traj_fake_rel = generator(obs_traj, obs_traj_rel, pred_traj_gt_rel, seq_start_end, False, mean_rel, std_rel)
         pred_traj_fake = relative_to_abs(pred_traj_fake_rel, obs_traj[-1])
 
         if args.l2_loss_weight > 0:
@@ -452,7 +452,7 @@ def check_accuracy(args, loader, generator, discriminator, d_loss_fn, device, pr
             linear_ped = 1 - non_linear_ped
             loss_mask = loss_mask[:, args.obs_len:]
 
-            pred_traj_fake_rel = generator(obs_traj, obs_traj_rel, pred_traj_gt_rel, seq_start_end, predict)
+            pred_traj_fake_rel = generator(obs_traj, obs_traj_rel, pred_traj_gt_rel, seq_start_end, predict, mean_rel, std_rel)
             pred_traj_fake = relative_to_abs(pred_traj_fake_rel, obs_traj[-1])
 
             g_l2_loss_abs, g_l2_loss_rel = cal_l2_losses(
